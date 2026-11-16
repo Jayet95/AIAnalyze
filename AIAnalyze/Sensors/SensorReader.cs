@@ -61,13 +61,30 @@ public sealed class SensorReader : IDisposable
                 HardwareName: hardware.Name,
                 SensorName: sensor.Name,
                 SensorType: sensor.SensorType.ToString(),
-                Value: sensor.Value));
+                Value: ToReadingOrNull(sensor)));
         }
 
         foreach (var sub in hardware.SubHardware)
         {
             CollectFrom(sub, samples);
         }
+    }
+
+    /// <summary>
+    /// A running chip never reports exactly 0 °C, so a 0 temperature means the sensor
+    /// was not actually read (seen on AMD CPUs without elevated rights). Store it as unreadable.
+    /// </summary>
+    private static float? ToReadingOrNull(ISensor sensor)
+    {
+        if (sensor.Value is null)
+        {
+            return null;
+        }
+        if (sensor.SensorType == SensorType.Temperature && sensor.Value.Value == 0f)
+        {
+            return null;
+        }
+        return sensor.Value;
     }
 
     private static bool IsTrackedHardware(HardwareType type) =>
