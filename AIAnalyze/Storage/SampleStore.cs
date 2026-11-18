@@ -37,8 +37,51 @@ public sealed class SampleStore : IDisposable
                 value       REAL             -- NULL = present but unreadable
             );
             CREATE INDEX IF NOT EXISTS ix_samples_ts ON samples (ts_utc);
+            CREATE TABLE IF NOT EXISTS sessions (
+                id           INTEGER PRIMARY KEY,
+                application  TEXT    NOT NULL,
+                settings_key TEXT    NOT NULL,
+                start_utc    INTEGER NOT NULL,  -- Unix milliseconds
+                end_utc      INTEGER NOT NULL,
+                frame_count  INTEGER NOT NULL,
+                median_fps   REAL    NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS ix_sessions_app ON sessions (application, settings_key);
             """;
         create.ExecuteNonQuery();
+    }
+
+    public void InsertSession(Analysis.CompletedSession session, string settingsKey)
+    {
+        using var cmd = _connection.CreateCommand();
+        cmd.CommandText = """
+            INSERT INTO sessions (application, settings_key, start_utc, end_utc, frame_count, median_fps)
+            VALUES ($app, $key, $start, $end, $frames, $fps);
+            """;
+        cmd.Parameters.AddWithValue("$app", session.Application);
+        cmd.Parameters.AddWithValue("$key", settingsKey);
+        cmd.Parameters.AddWithValue("$start", session.StartUtc.ToUnixTimeMilliseconds());
+        cmd.Parameters.AddWithValue("$end", session.EndUtc.ToUnixTimeMilliseconds());
+        cmd.Parameters.AddWithValue("$frames", session.FrameCount);
+        cmd.Parameters.AddWithValue("$fps", session.MedianFps);
+        cmd.ExecuteNonQuery();
+    }
+
+    /// <summary>Median FPS of every saved session for this game and settings profile.</summary>
+    public IReadOnlyList<double> GetSessionFps(string application, string settingsKey)
+    {
+        using var cmd = _connection.CreateCommand();
+        cmd.CommandText = "SELECT median_fps FROM sessions WHERE application = $app AND settings_key = $key;";
+        cmd.Parameters.AddWithValue("$app", application);
+        cmd.Parameters.AddWithValue("$key", settingsKey);
+
+        var values = new List<double>();
+        using var reader = cmd.ExecuteReader();
+        while (reader.Read())
+        {
+            values.Add(reader.GetDouble(0));
+        }
+        return values;
     }
 
     public void WriteTick(DateTimeOffset timestamp, IReadOnlyList<SensorSample> samples)

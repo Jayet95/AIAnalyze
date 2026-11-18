@@ -18,7 +18,10 @@ if (args.Contains("--dump-sensors"))
 }
 
 var builder = Host.CreateApplicationBuilder(args);
+builder.Services.Configure<AIAnalyze.Capture.PresentMonOptions>(
+    builder.Configuration.GetSection("PresentMon"));
 builder.Services.AddHostedService<Worker>();
+builder.Services.AddHostedService<AIAnalyze.Capture.FpsMonitorService>();
 
 var host = builder.Build();
 host.Run();

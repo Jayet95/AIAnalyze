@@ -15,14 +15,9 @@ public class Worker(ILogger<Worker> logger) : BackgroundService
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        var dbPath = Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-            "AIAnalyze",
-            "telemetry.db");
-
         using var reader = new SensorReader();
-        using var store = new SampleStore(dbPath);
-        logger.LogInformation("Sampling every {Interval} into {Db}", SampleInterval, dbPath);
+        using var store = new SampleStore(Capture.TelemetryPaths.DatabasePath);
+        logger.LogInformation("Sampling every {Interval} into {Db}", SampleInterval, Capture.TelemetryPaths.DatabasePath);
 
         var nextCleanup = DateTimeOffset.UtcNow;
         using var timer = new PeriodicTimer(SampleInterval);
