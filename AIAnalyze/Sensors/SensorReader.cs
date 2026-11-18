@@ -15,7 +15,7 @@ public sealed record SensorSample(
 
 /// <summary>
 /// Reads CPU and GPU sensors through LibreHardwareMonitorLib.
-/// Only temperature and load sensors are collected in this first phase.
+/// Stores every sensor on those devices. Needs administrator rights for full CPU telemetry.
 /// </summary>
 public sealed class SensorReader : IDisposable
 {
@@ -80,10 +80,7 @@ public sealed class SensorReader : IDisposable
     {
         foreach (var sensor in hardware.Sensors)
         {
-            if (sensor.SensorType is not (SensorType.Temperature or SensorType.Load))
-            {
-                continue;
-            }
+            // Every sensor the library reports is stored (temps, loads, clocks, power, voltages, fans, ...).
             samples.Add(new SensorSample(
                 SensorId: sensor.Identifier.ToString(),
                 HardwareName: hardware.Name,
