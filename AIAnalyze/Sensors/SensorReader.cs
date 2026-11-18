@@ -48,6 +48,34 @@ public sealed class SensorReader : IDisposable
         return samples;
     }
 
+    /// <summary>
+    /// Diagnostic dump: every sensor the library sees on every hardware item, with no filtering.
+    /// Used by --dump-sensors to find out which sensor names this machine actually exposes.
+    /// </summary>
+    public IReadOnlyList<string> DumpAll()
+    {
+        _computer.Accept(_visitor);
+        var lines = new List<string>();
+        foreach (var hardware in _computer.Hardware)
+        {
+            DumpFrom(hardware, "", lines);
+        }
+        return lines;
+    }
+
+    private static void DumpFrom(IHardware hardware, string indent, List<string> lines)
+    {
+        lines.Add($"{indent}[{hardware.HardwareType}] {hardware.Name}");
+        foreach (var sensor in hardware.Sensors)
+        {
+            lines.Add($"{indent}  {sensor.SensorType,-12} {sensor.Name,-40} {(sensor.Value.HasValue ? sensor.Value.Value.ToString("F1") : "None")}");
+        }
+        foreach (var sub in hardware.SubHardware)
+        {
+            DumpFrom(sub, indent + "  ", lines);
+        }
+    }
+
     private static void CollectFrom(IHardware hardware, List<SensorSample> samples)
     {
         foreach (var sensor in hardware.Sensors)
