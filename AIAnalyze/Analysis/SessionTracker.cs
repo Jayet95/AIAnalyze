@@ -1,12 +1,16 @@
 namespace AIAnalyze.Analysis;
 
+/// <summary>Frames presented during one wall-clock second. The count is that second's FPS.</summary>
+public sealed record FpsSecond(long UnixSeconds, int Frames);
+
 /// <summary>A finished gaming session: one application, from first to last frame.</summary>
 public sealed record CompletedSession(
     string Application,
     DateTimeOffset StartUtc,
     DateTimeOffset EndUtc,
     int FrameCount,
-    double MedianFps);
+    double MedianFps,
+    IReadOnlyList<FpsSecond> Seconds);
 
 /// <summary>
 /// Groups frames into sessions. A session ends when there is an idle gap longer than
@@ -15,6 +19,7 @@ public sealed record CompletedSession(
 public sealed class SessionTracker(TimeSpan idleGap)
 {
     private readonly List<FrameRecord> _frames = [];
+    private readonly SortedDictionary<long, int> _framesPerSecond = [];
     private string? _application;
     private DateTimeOffset _start;
     private DateTimeOffset _last;
@@ -38,6 +43,9 @@ public sealed class SessionTracker(TimeSpan idleGap)
 
         _frames.Add(frame);
         _last = now;
+
+        var second = now.ToUnixTimeSeconds();
+        _framesPerSecond[second] = _framesPerSecond.GetValueOrDefault(second) + 1;
         return closed;
     }
 
@@ -47,11 +55,13 @@ public sealed class SessionTracker(TimeSpan idleGap)
     private CompletedSession? Close()
     {
         var fps = BaselineRules.SessionFps(_frames);
+        var seconds = _framesPerSecond.Select(p => new FpsSecond(p.Key, p.Value)).ToList();
         var result = fps is null
             ? null
-            : new CompletedSession(_application!, _start, _last, _frames.Count, fps.Value);
+            : new CompletedSession(_application!, _start, _last, _frames.Count, fps.Value, seconds);
 
         _frames.Clear();
+        _framesPerSecond.Clear();
         _application = null;
         return result;
     }

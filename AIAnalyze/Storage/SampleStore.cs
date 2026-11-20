@@ -47,6 +47,12 @@ public sealed class SampleStore : IDisposable
                 median_fps   REAL    NOT NULL
             );
             CREATE INDEX IF NOT EXISTS ix_sessions_app ON sessions (application, settings_key);
+            CREATE TABLE IF NOT EXISTS fps_seconds (
+                session_id INTEGER NOT NULL,
+                ts_utc     INTEGER NOT NULL,  -- Unix milliseconds, start of the second
+                frames     INTEGER NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS ix_fps_session ON fps_seconds (session_id, ts_utc);
             CREATE TABLE IF NOT EXISTS system_snapshots (
                 id           INTEGER PRIMARY KEY,
                 captured_utc INTEGER NOT NULL,  -- Unix milliseconds
@@ -56,12 +62,17 @@ public sealed class SampleStore : IDisposable
         create.ExecuteNonQuery();
     }
 
-    public void InsertSession(Analysis.CompletedSession session, string settingsKey)
+    /// <summary>Stores a session and its per-second FPS in one transaction. Returns the new session id.</summary>
+    public long InsertSession(Analysis.CompletedSession session, string settingsKey)
     {
+        using var transaction = _connection.BeginTransaction();
+
         using var cmd = _connection.CreateCommand();
+        cmd.Transaction = transaction;
         cmd.CommandText = """
             INSERT INTO sessions (application, settings_key, start_utc, end_utc, frame_count, median_fps)
             VALUES ($app, $key, $start, $end, $frames, $fps);
+            SELECT last_insert_rowid();
             """;
         cmd.Parameters.AddWithValue("$app", session.Application);
         cmd.Parameters.AddWithValue("$key", settingsKey);
@@ -69,7 +80,91 @@ public sealed class SampleStore : IDisposable
         cmd.Parameters.AddWithValue("$end", session.EndUtc.ToUnixTimeMilliseconds());
         cmd.Parameters.AddWithValue("$frames", session.FrameCount);
         cmd.Parameters.AddWithValue("$fps", session.MedianFps);
-        cmd.ExecuteNonQuery();
+        var sessionId = (long)cmd.ExecuteScalar()!;
+
+        using var second = _connection.CreateCommand();
+        second.Transaction = transaction;
+        second.CommandText = "INSERT INTO fps_seconds (session_id, ts_utc, frames) VALUES ($id, $ts, $frames);";
+        var id = second.Parameters.Add("$id", SqliteType.Integer);
+        var ts = second.Parameters.Add("$ts", SqliteType.Integer);
+        var frames = second.Parameters.Add("$frames", SqliteType.Integer);
+        id.Value = sessionId;
+        foreach (var point in session.Seconds)
+        {
+            ts.Value = point.UnixSeconds * 1000;
+            frames.Value = point.Frames;
+            second.ExecuteNonQuery();
+        }
+
+        transaction.Commit();
+        return sessionId;
+    }
+
+    /// <summary>Most recent sessions first, for picking one to inspect.</summary>
+    public IReadOnlyList<StoredSession> ListSessions(int limit)
+    {
+        using var cmd = _connection.CreateCommand();
+        cmd.CommandText = """
+            SELECT id, application, start_utc, end_utc, frame_count, median_fps
+            FROM sessions ORDER BY start_utc DESC LIMIT $limit;
+            """;
+        cmd.Parameters.AddWithValue("$limit", limit);
+
+        var rows = new List<StoredSession>();
+        using var reader = cmd.ExecuteReader();
+        while (reader.Read())
+        {
+            rows.Add(new StoredSession(
+                reader.GetInt64(0),
+                reader.GetString(1),
+                DateTimeOffset.FromUnixTimeMilliseconds(reader.GetInt64(2)),
+                DateTimeOffset.FromUnixTimeMilliseconds(reader.GetInt64(3)),
+                reader.GetInt32(4),
+                reader.GetDouble(5)));
+        }
+        return rows;
+    }
+
+    /// <summary>Per-second FPS rows for one session, in time order.</summary>
+    public IReadOnlyList<Analysis.FpsSecond> GetSessionSeconds(long sessionId)
+    {
+        using var cmd = _connection.CreateCommand();
+        cmd.CommandText = "SELECT ts_utc / 1000, frames FROM fps_seconds WHERE session_id = $id ORDER BY ts_utc;";
+        cmd.Parameters.AddWithValue("$id", sessionId);
+
+        var rows = new List<Analysis.FpsSecond>();
+        using var reader = cmd.ExecuteReader();
+        while (reader.Read())
+        {
+            rows.Add(new Analysis.FpsSecond(reader.GetInt64(0), reader.GetInt32(1)));
+        }
+        return rows;
+    }
+
+    /// <summary>Sensor readings between two instants (inclusive), in time order.</summary>
+    public IReadOnlyList<StoredReading> GetReadings(DateTimeOffset from, DateTimeOffset to)
+    {
+        using var cmd = _connection.CreateCommand();
+        cmd.CommandText = """
+            SELECT ts_utc, sensor_id, hardware, sensor_name, sensor_type, value
+            FROM samples WHERE ts_utc BETWEEN $from AND $to ORDER BY ts_utc;
+            """;
+        cmd.Parameters.AddWithValue("$from", from.ToUnixTimeMilliseconds());
+        cmd.Parameters.AddWithValue("$to", to.ToUnixTimeMilliseconds());
+
+        var rows = new List<StoredReading>();
+        using var reader = cmd.ExecuteReader();
+        while (reader.Read())
+        {
+            rows.Add(new StoredReading(
+                reader.GetInt64(0),
+                reader.GetString(1),
+                reader.GetString(2),
+                reader.GetString(3),
+                reader.GetString(4),
+                reader.IsDBNull(5) ? null : reader.GetDouble(5)));
+        }
+        return rows;
     }
 
     /// <summary>Median FPS of every saved session for this game and settings profile.</summary>

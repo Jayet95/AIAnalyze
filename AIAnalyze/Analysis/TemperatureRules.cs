@@ -43,7 +43,7 @@ public static class TemperatureRules
                 continue;
             }
 
-            var kind = KindOf(sample.SensorId);
+            var kind = DeviceKinds.Of(sample.SensorId);
             if (kind is null)
             {
                 continue;
@@ -74,27 +74,4 @@ public static class TemperatureRules
         return findings;
     }
 
-    private enum DeviceKind
-    {
-        Cpu,
-        Gpu,
-    }
-
-    // LibreHardwareMonitor identifiers start with the device kind, e.g. "/amdcpu/0/temperature/2".
-    private static DeviceKind? KindOf(string sensorId)
-    {
-        if (sensorId.StartsWith("/amdcpu", StringComparison.OrdinalIgnoreCase)
-            || sensorId.StartsWith("/intelcpu", StringComparison.OrdinalIgnoreCase)
-            || sensorId.StartsWith("/cpu", StringComparison.OrdinalIgnoreCase))
-        {
-            return DeviceKind.Cpu;
-        }
-
-        if (sensorId.StartsWith("/gpu", StringComparison.OrdinalIgnoreCase))
-        {
-            return DeviceKind.Gpu;
-        }
-
-        return null;
-    }
 }
