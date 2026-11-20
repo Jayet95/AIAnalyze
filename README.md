@@ -26,7 +26,8 @@ powershell -ExecutionPolicy Bypass -File scripts\uninstall-service.ps1
 
 - Installed files: `C:\Program Files\AIAnalyze`
 - Database: `C:\ProgramData\AIAnalyze\telemetry.db`
-- Settings, including the PresentMon path: `C:\Program Files\AIAnalyze\appsettings.json`
+- Defaults: `C:\Program Files\AIAnalyze\appsettings.json` (replaced on every reinstall)
+- Your overrides, such as the PresentMon path: `C:\ProgramData\AIAnalyze\appsettings.json` (kept across reinstalls)
 - Logs: Windows Event Log, source `AIAnalyze`
 
 ## Viewing sessions
@@ -44,7 +45,16 @@ dotnet "C:\Program Files\AIAnalyze\AIAnalyze.dll" --timeline <id>
 2. Install the service (see above) and check `Get-Service AIAnalyze` shows `Running`.
 3. Confirm the database exists: `Test-Path C:\ProgramData\AIAnalyze\telemetry.db`
 4. Install PresentMon from its official GitHub releases and run `PresentMon.exe --help`. Save the output.
-5. Set `PresentMon:ExecutablePath` in `appsettings.json` to the PresentMon path, then run `Restart-Service AIAnalyze`.
+5. Create `C:\ProgramData\AIAnalyze\appsettings.json` with the PresentMon path, then run `Restart-Service AIAnalyze`:
+
+   ```json
+   {
+     "PresentMon": {
+       "ExecutablePath": "C:\\Program Files\\AIAnalyze\\PresentMon\\PresentMon.exe",
+       "Arguments": "--output_stdout --no_console_stats --v1_metrics --session_name AIAnalyze --stop_existing_session"
+     }
+   }
+   ```
 6. Play a game for a few minutes, then run `--sessions` and `--timeline <id>`.
 
 Sessions saved before per-second FPS was added have no timeline rows.

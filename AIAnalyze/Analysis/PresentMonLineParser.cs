@@ -3,8 +3,9 @@ using System.Globalization;
 namespace AIAnalyze.Analysis;
 
 /// <summary>
-/// Streaming parser for PresentMon CSV output: the first non-empty line is the header,
-/// every later line is parsed on its own. Columns are located by header name.
+/// Streaming parser for PresentMon CSV output. The header is the first line that contains
+/// Application, TimeInSeconds and MsBetweenPresents (matched case-insensitively). Lines before
+/// the header, such as status messages, are skipped. Nothing here throws on bad input.
 /// </summary>
 public sealed class PresentMonLineParser
 {
@@ -12,7 +13,10 @@ public sealed class PresentMonLineParser
     private int _timeIdx;
     private int _frameTimeIdx;
 
-    /// <summary>Returns true and the frame for a valid data row. Header and bad rows return false.</summary>
+    /// <summary>True once a header line has been recognised.</summary>
+    public bool HeaderFound => _appIdx is not null;
+
+    /// <summary>Returns true and the frame for a valid data row. Header, pre-header and bad rows return false.</summary>
     public bool TryParse(string raw, out FrameRecord? frame)
     {
         frame = null;
@@ -26,17 +30,7 @@ public sealed class PresentMonLineParser
 
         if (_appIdx is null)
         {
-            var app = Array.IndexOf(cols, "Application");
-            var time = Array.IndexOf(cols, "TimeInSeconds");
-            var ms = Array.IndexOf(cols, "MsBetweenPresents");
-            if (app < 0 || time < 0 || ms < 0)
-            {
-                throw new FormatException(
-                    "PresentMon header is missing Application, TimeInSeconds or MsBetweenPresents.");
-            }
-            _appIdx = app;
-            _timeIdx = time;
-            _frameTimeIdx = ms;
+            TryReadHeader(cols);
             return false;
         }
 
@@ -50,10 +44,28 @@ public sealed class PresentMonLineParser
             double.TryParse(cols[_frameTimeIdx], NumberStyles.Float, CultureInfo.InvariantCulture, out var msBetween) &&
             msBetween > 0)
         {
-            frame = new FrameRecord(cols[_appIdx.Value].Trim('"'), seconds, msBetween);
+            frame = new FrameRecord(cols[_appIdx.Value].Trim().Trim('"'), seconds, msBetween);
             return true;
         }
 
         return false;
     }
+
+    private void TryReadHeader(string[] cols)
+    {
+        var app = IndexOf(cols, "Application");
+        var time = IndexOf(cols, "TimeInSeconds");
+        var ms = IndexOf(cols, "MsBetweenPresents");
+        if (app < 0 || time < 0 || ms < 0)
+        {
+            return;
+        }
+
+        _appIdx = app;
+        _timeIdx = time;
+        _frameTimeIdx = ms;
+    }
+
+    private static int IndexOf(string[] cols, string name) =>
+        Array.FindIndex(cols, c => string.Equals(c.Trim().Trim('"'), name, StringComparison.OrdinalIgnoreCase));
 }

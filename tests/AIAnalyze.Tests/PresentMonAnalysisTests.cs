@@ -25,7 +25,7 @@ public class PresentMonAnalysisTests
     }
 
     [Fact]
-    public void Parser_skips_bad_rows_and_fails_on_missing_columns()
+    public void Parser_skips_bad_rows()
     {
         var lines = new[]
         {
@@ -36,7 +36,40 @@ public class PresentMonAnalysisTests
         };
 
         Assert.Single(PresentMonParser.Parse(lines));
-        Assert.Throws<FormatException>(() => PresentMonParser.Parse(new[] { "Application,ProcessID" }));
+    }
+
+    [Fact]
+    public void Status_lines_before_the_header_are_skipped_without_throwing()
+    {
+        var lines = new[]
+        {
+            "PresentMon 2.3.1 starting",
+            "warning: 3 ETW events were lost.",
+            Header,
+            "game.exe,100,1.0,16.6",
+        };
+
+        Assert.Single(PresentMonParser.Parse(lines));
+    }
+
+    [Fact]
+    public void Header_names_match_regardless_of_case()
+    {
+        var lines = new[]
+        {
+            "application,timeinseconds,msbetweenpresents",
+            "game.exe,1.0,16.6",
+        };
+
+        Assert.Single(PresentMonParser.Parse(lines));
+    }
+
+    [Fact]
+    public void Output_without_any_header_gives_no_frames_and_no_exception()
+    {
+        var lines = new[] { "Application,ProcessID", "game.exe,100,1.0,16.6" };
+
+        Assert.Empty(PresentMonParser.Parse(lines));
     }
 
     [Fact]

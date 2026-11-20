@@ -7,6 +7,7 @@ namespace AIAnalyze.Capture;
 /// <summary>
 /// Runs PresentMon, groups its frames into sessions, stores each session, and compares
 /// it with the personal baseline for that game. Does nothing if PresentMon is not configured.
+/// If PresentMon fails or exits, it is started again after a delay.
 /// </summary>
 public sealed class FpsMonitorService(
     ILogger<FpsMonitorService> logger,
@@ -18,6 +19,9 @@ public sealed class FpsMonitorService(
     // A pause longer than this ends the session.
     private static readonly TimeSpan IdleGap = TimeSpan.FromSeconds(30);
 
+    // Wait before restarting PresentMon, so a broken setup does not spin.
+    private static readonly TimeSpan RestartDelay = TimeSpan.FromSeconds(30);
+
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         var runner = new PresentMonRunner(options.Value);
@@ -28,32 +32,61 @@ public sealed class FpsMonitorService(
         }
 
         using var store = new SampleStore(TelemetryPaths.DatabasePath);
-        var lineParser = new PresentMonLineParser();
         var tracker = new SessionTracker(IdleGap);
 
-        try
+        while (!stoppingToken.IsCancellationRequested)
         {
-            await foreach (var line in runner.ReadLinesAsync(stoppingToken))
+            var lineParser = new PresentMonLineParser();
+            var loggedPreHeaderLine = false;
+
+            try
             {
-                if (!lineParser.TryParse(line, out var frame) || frame is null)
+                await foreach (var line in runner.ReadLinesAsync(stoppingToken))
                 {
-                    continue;
+                    if (!lineParser.TryParse(line, out var frame) || frame is null)
+                    {
+                        // Show the first line before the header once, so unexpected PresentMon output can be diagnosed.
+                        if (!lineParser.HeaderFound && !loggedPreHeaderLine && line.Trim().Length > 0)
+                        {
+                            logger.LogInformation("PresentMon output before header (skipped): {Line}", line.Trim());
+                            loggedPreHeaderLine = true;
+                        }
+                        continue;
+                    }
+
+                    var closed = tracker.AddFrame(frame, DateTimeOffset.UtcNow);
+                    if (closed is not null)
+                    {
+                        Record(store, closed);
+                    }
                 }
 
-                var closed = tracker.AddFrame(frame, DateTimeOffset.UtcNow);
-                if (closed is not null)
-                {
-                    Record(store, closed);
-                }
+                logger.LogWarning("PresentMon exited. Restarting in {Delay}.", RestartDelay);
             }
-        }
-        catch (OperationCanceledException)
-        {
-            // Normal shutdown.
-        }
-        catch (Exception ex)
-        {
-            logger.LogError(ex, "FPS capture stopped unexpectedly");
+            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+            {
+                break;
+            }
+            catch (Exception ex)
+            {
+                logger.LogError(ex, "FPS capture stopped unexpectedly. Restarting in {Delay}.", RestartDelay);
+            }
+
+            // Save what was captured before the stop; the next run starts a new session.
+            var interrupted = tracker.Finish();
+            if (interrupted is not null)
+            {
+                Record(store, interrupted);
+            }
+
+            try
+            {
+                await Task.Delay(RestartDelay, stoppingToken);
+            }
+            catch (OperationCanceledException)
+            {
+                break;
+            }
         }
 
         var finished = tracker.Finish();

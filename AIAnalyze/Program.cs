@@ -62,6 +62,12 @@ if (timelineIndex >= 0)
 
 var builder = Host.CreateApplicationBuilder(args);
 
+// Local overrides live in ProgramData, which the installer never overwrites. Values here win over appsettings.json.
+builder.Configuration.AddJsonFile(
+    Path.Combine(AIAnalyze.Capture.TelemetryPaths.DataDirectory, "appsettings.json"),
+    optional: true,
+    reloadOnChange: true);
+
 // Runs as a Windows service when installed with the install script; a normal console run still works.
 builder.Services.AddWindowsService(options => options.ServiceName = "AIAnalyze");
 builder.Logging.AddEventLog();
