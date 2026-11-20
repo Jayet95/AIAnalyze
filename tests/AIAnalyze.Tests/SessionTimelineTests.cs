@@ -21,10 +21,9 @@ public class SessionTimelineTests
         tracker.AddFrame(frame, T0.AddMilliseconds(400));
         tracker.AddFrame(frame, T0.AddMilliseconds(900));
         tracker.AddFrame(frame, T0.AddSeconds(1));
-        var session = tracker.Finish();
+        var session = Assert.Single(tracker.Finish());
 
-        Assert.NotNull(session);
-        Assert.Equal(2, session!.Seconds.Count);
+        Assert.Equal(2, session.Seconds.Count);
         Assert.Equal(3, session.Seconds[0].Frames);
         Assert.Equal(1, session.Seconds[1].Frames);
     }

@@ -13,56 +13,108 @@ public sealed record CompletedSession(
     IReadOnlyList<FpsSecond> Seconds);
 
 /// <summary>
-/// Groups frames into sessions. A session ends when there is an idle gap longer than
-/// <paramref name="idleGap"/>, or when the application changes.
+/// Groups frames into one open session per application. A session ends when that application
+/// has no frame for longer than <paramref name="idleGap"/>, or when <see cref="Finish"/> is called.
+/// Frames from other applications do not end it, because PresentMon reports every process that
+/// presents (the game, the desktop compositor, browsers) and they interleave.
 /// </summary>
-public sealed class SessionTracker(TimeSpan idleGap)
+/// <param name="idleGap">How long an application may be silent before its session ends.</param>
+/// <param name="minFrames">Sessions with fewer frames are dropped instead of saved.</param>
+/// <param name="excludedApps">Applications to ignore completely, such as dwm.exe.</param>
+public sealed class SessionTracker(TimeSpan idleGap, int minFrames = 1, IEnumerable<string>? excludedApps = null)
 {
-    private readonly List<FrameRecord> _frames = [];
-    private readonly SortedDictionary<long, int> _framesPerSecond = [];
-    private string? _application;
-    private DateTimeOffset _start;
-    private DateTimeOffset _last;
+    private readonly Dictionary<string, OpenSession> _open = new(StringComparer.OrdinalIgnoreCase);
+    private readonly HashSet<string> _excluded = new(excludedApps ?? [], StringComparer.OrdinalIgnoreCase);
 
-    /// <summary>Adds a frame. Returns a session if the frame closed the previous one.</summary>
-    public CompletedSession? AddFrame(FrameRecord frame, DateTimeOffset now)
+    /// <summary>
+    /// Adds a frame. Returns sessions that ended because this application had been silent
+    /// longer than the idle gap before this frame.
+    /// </summary>
+    public IReadOnlyList<CompletedSession> AddFrame(FrameRecord frame, DateTimeOffset now)
     {
-        CompletedSession? closed = null;
-
-        if (_application is not null &&
-            (frame.Application != _application || now - _last > idleGap))
+        if (_excluded.Contains(frame.Application))
         {
-            closed = Close();
+            return [];
         }
 
-        _application ??= frame.Application;
-        if (_frames.Count == 0)
+        var closed = new List<CompletedSession>();
+        if (_open.TryGetValue(frame.Application, out var existing) && now - existing.Last > idleGap)
         {
-            _start = now;
+            AddIfClosed(closed, existing);
+            _open.Remove(frame.Application);
         }
 
-        _frames.Add(frame);
-        _last = now;
+        if (!_open.TryGetValue(frame.Application, out var session))
+        {
+            session = new OpenSession(frame.Application, now);
+            _open[frame.Application] = session;
+        }
 
-        var second = now.ToUnixTimeSeconds();
-        _framesPerSecond[second] = _framesPerSecond.GetValueOrDefault(second) + 1;
+        session.Add(frame, now);
         return closed;
     }
 
-    /// <summary>Closes the current session, if any. Used on shutdown.</summary>
-    public CompletedSession? Finish() => _application is null ? null : Close();
-
-    private CompletedSession? Close()
+    /// <summary>
+    /// Closes every session whose application has been silent longer than the idle gap.
+    /// Called on a timer, because a game that exits sends no frames to trigger <see cref="AddFrame"/>.
+    /// </summary>
+    public IReadOnlyList<CompletedSession> CloseIdle(DateTimeOffset now)
     {
-        var fps = BaselineRules.SessionFps(_frames);
-        var seconds = _framesPerSecond.Select(p => new FpsSecond(p.Key, p.Value)).ToList();
-        var result = fps is null
-            ? null
-            : new CompletedSession(_application!, _start, _last, _frames.Count, fps.Value, seconds);
+        var closed = new List<CompletedSession>();
+        foreach (var (app, session) in _open.Where(p => now - p.Value.Last > idleGap).ToList())
+        {
+            AddIfClosed(closed, session);
+            _open.Remove(app);
+        }
+        return closed;
+    }
 
-        _frames.Clear();
-        _framesPerSecond.Clear();
-        _application = null;
-        return result;
+    /// <summary>Closes every open session. Used on shutdown and before a PresentMon restart.</summary>
+    public IReadOnlyList<CompletedSession> Finish()
+    {
+        var closed = new List<CompletedSession>();
+        foreach (var session in _open.Values)
+        {
+            AddIfClosed(closed, session);
+        }
+        _open.Clear();
+        return closed;
+    }
+
+    private void AddIfClosed(List<CompletedSession> closed, OpenSession session)
+    {
+        var completed = session.ToCompleted();
+        if (completed is not null && completed.FrameCount >= minFrames)
+        {
+            closed.Add(completed);
+        }
+    }
+
+    private sealed class OpenSession(string application, DateTimeOffset start)
+    {
+        private readonly List<FrameRecord> _frames = [];
+        private readonly SortedDictionary<long, int> _framesPerSecond = [];
+
+        public DateTimeOffset Last { get; private set; } = start;
+
+        public void Add(FrameRecord frame, DateTimeOffset now)
+        {
+            _frames.Add(frame);
+            Last = now;
+            var second = now.ToUnixTimeSeconds();
+            _framesPerSecond[second] = _framesPerSecond.GetValueOrDefault(second) + 1;
+        }
+
+        public CompletedSession? ToCompleted()
+        {
+            var fps = BaselineRules.SessionFps(_frames);
+            if (fps is null)
+            {
+                return null;
+            }
+
+            var seconds = _framesPerSecond.Select(p => new FpsSecond(p.Key, p.Value)).ToList();
+            return new CompletedSession(application, start, Last, _frames.Count, fps.Value, seconds);
+        }
     }
 }

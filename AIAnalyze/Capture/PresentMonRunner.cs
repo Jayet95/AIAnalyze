@@ -25,7 +25,10 @@ public sealed class PresentMonRunner
 
     public bool IsConfigured => !string.IsNullOrWhiteSpace(_options.ExecutablePath);
 
-    public async IAsyncEnumerable<string> ReadLinesAsync([EnumeratorCancellation] CancellationToken cancellationToken)
+    /// <param name="onErrorLine">Receives PresentMon's stderr lines, for diagnosing failures under the service.</param>
+    public async IAsyncEnumerable<string> ReadLinesAsync(
+        [EnumeratorCancellation] CancellationToken cancellationToken,
+        Action<string>? onErrorLine = null)
     {
         if (!IsConfigured)
         {
@@ -41,12 +44,25 @@ public sealed class PresentMonRunner
             FileName = _options.ExecutablePath,
             Arguments = _options.Arguments,
             RedirectStandardOutput = true,
+            RedirectStandardError = true,
             UseShellExecute = false,
             CreateNoWindow = true,
         };
 
         using var process = Process.Start(startInfo)
             ?? throw new InvalidOperationException("Failed to start PresentMon.");
+
+        if (onErrorLine is not null)
+        {
+            process.ErrorDataReceived += (_, e) =>
+            {
+                if (e.Data is not null)
+                {
+                    onErrorLine(e.Data);
+                }
+            };
+        }
+        process.BeginErrorReadLine();
 
         try
         {
