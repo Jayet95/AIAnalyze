@@ -176,3 +176,26 @@ Have the tester write down which of them were running, and repeat the test once 
 - The checklist's code blocks are labeled `bash` but contain PowerShell. Use `powershell`.
 - The last line of `scripts/install-service.ps1` still says to set `PresentMon:ExecutablePath` in `C:\Program Files\AIAnalyze\appsettings.json`. It should point to `C:\ProgramData\AIAnalyze\appsettings.json`, as the README now does.
 - `Get-EventLog` exists only in Windows PowerShell 5.1. Use `Get-WinEvent -FilterHashtable @{LogName='Application'; ProviderName='AIAnalyze'} -MaxEvents 40 | Format-List TimeCreated, Message`, which works in 5.1 and 7.
+
+## Round 4: running the revised checklist on the first computer (main, 31a619d)
+
+Run on 2026-11-20. Steps 1–4 passed: the build has 39 passing tests, the service reinstalled and is `Running`, and the ProgramData override survived the reinstall.
+The cleanup found 9,767 sessions in the range, deleted them all, and a second count returned 0.
+
+### 13. The cleanup section does not say it needs Administrator (should fix)
+
+"First computer only: delete the junk test sessions" runs `Stop-Service` and `Start-Service`, and writes to `C:\ProgramData\AIAnalyze\telemetry.db`, which the service account (LocalSystem) created.
+Both need an elevated window, but the section is not marked **Administrator** the way step 2 is. In a normal window `Stop-Service` fails, and the delete may fail on file permissions or on the running service's lock.
+Add **(Administrator)** to the section title.
+
+### 14. Step 5 should say how to check and close the tools (small)
+
+- Give a command to see what is running, for example:
+
+  ```powershell
+  Get-Process RTSS, RTSSHooksLoader64, MSIAfterburner, FrameView*, RadeonSoftware -ErrorAction SilentlyContinue | Select-Object Name, Id
+  ```
+
+- MSI Afterburner starts RTSS, and both run elevated, so they must be closed from the tray (right-click → Exit) or from an elevated window. Closing only RTSS lets Afterburner start it again.
+- `nvcontainer` belongs to the NVIDIA driver and is not FrameView. Leave it running.
+- In "What to send back", step 5 has no command output, so ask for the output of the command above instead.
