@@ -94,3 +94,29 @@ Start-Service AIAnalyze
 ## Known open problem
 
 If no frames arrive while the service runs alone, PresentMon may not see the rendering app from session 0. See `docs/fix-presentmon-capture.md` on the branch `fix/presentmon-capture-notes`, section 4.
+
+## Test: run the service under an administrator account
+
+Use this only after the clean test (step 5 and 6) shows no frames. Run it with all other PresentMon-related tools closed.
+
+**Note:** Windows services run in session 0 whatever account they use. This test checks whether the account matters. It may not fix the problem, and a negative result is still useful.
+
+1. Reinstall the service under your admin account. The script prompts for the credential:
+
+   ```powershell
+   powershell -ExecutionPolicy Bypass -File scripts\install-service.ps1 -ServiceCredential (Get-Credential)
+   ```
+
+   Enter the account as `.\<username>` (for a local account) or `DOMAIN\<username>`.
+
+2. Check the account:
+
+   ```powershell
+   Get-CimInstance Win32_Service -Filter "Name='AIAnalyze'" | Select-Object Name, StartName, State
+   ```
+
+3. Play the game for 5 minutes, close it, and wait 1 minute.
+
+4. Check the Event Log and sessions (steps 7 and 8 above). Send both back, together with the output of step 2.
+
+To return to LocalSystem, reinstall without `-ServiceCredential`.
