@@ -334,3 +334,46 @@ Either log it at Warning, or add `"EventLog": { "LogLevel": { "Default": "Inform
 
 The service runs as LocalSystem with `UserSession: true`. MSI Afterburner and RTSS are closed. The previous test sessions were removed in Round 4 and there are no sessions now.
 To retest after the fix: `git pull`, run `scripts\install-service.ps1` as Administrator, restart the service, run FurMark for 90 seconds, wait a minute, then `dotnet "C:\Program Files\AIAnalyze\AIAnalyze.dll" --sessions`.
+
+## Round 8: user-session mode with the `cmd.exe` redirect (main, 586ecaf)
+
+Run on 2026-11-20 on the first computer. The build has 42 passing tests. The service was reinstalled as LocalSystem and kept `UserSession: true` in `C:\ProgramData\AIAnalyze\appsettings.json`.
+
+### Result: still no frames
+
+| Check | Result |
+|---|---|
+| Event Log | Now shows the `Information` lines, including `Started PresentMon (pid 29848) in console session 1.` Issue 17 is fixed. |
+| Launch | Works. The PresentMon child runs in session 1. |
+| `presentmon.csv` | Exists, but is **2 bytes** during the whole FurMark run (90 s, Unix ms `1795168930189`–`1795169021394`, plus a 65 s wait), and stays 2 bytes at the end. |
+| PresentMon activity | About 0.09 s of CPU in several minutes: it is idle. |
+| `--sessions` | Empty. |
+
+### 18. File output does not work in any form we tried; pipe output does (must fix)
+
+All runs below were by hand, elevated, in the user session, while FurMark rendered. The only difference is how the output is collected.
+
+| How the output is collected | Rows received |
+|---|---|
+| `Process.Start` with `RedirectStandardOutput` and a pipe (Round 1 probe, 15 s, no `--timed`) | **13,334** |
+| Same, in Round 2 (30 s, with the service also running) | about **17,800** |
+| `--output_file <path>` with `--timed 25` (Round 7) | file never created |
+| `cmd /c "PresentMon ... --output_stdout > file" --timed 25` (elevated) | file created, **0 lines** |
+| Same without `--timed`, stopped after 25 s with `taskkill /F /T` (elevated) | file created, **0 lines** |
+| Service launch, `cmd /c ... > presentmon.csv` (this round) | file created, **2 bytes** |
+
+A non-elevated copy of PresentMon also prints a warning to stderr (`PresentMon requires elevated privilege in order to query processes that are short-running or started on another account`) and produced 0 lines.
+
+What this shows: in this setup, every file-based variant gets nothing while a captured pipe gets thousands of rows. The cause is not known. The service run could not be fully separated from the file problem, because the same file path fails even for an elevated copy started by hand.
+
+Note that the `--timed` runs are not clean evidence on their own: with `--timed`, even `--output_file` wrote nothing, and I did not test whether `--timed` itself suppresses output with a pipe. The two runs without `--timed` are the clean ones.
+
+Suggested fix: do not use a file. Create an anonymous pipe in the service, mark the write end inheritable, and pass it to `CreateProcessAsUser` as `hStdOutput` (`STARTF_USESTDHANDLES`, `bInheritHandles = true`), with `PresentMon.exe` started directly (no `cmd.exe`). Read the read end in the service. Also give `hStdError` a second pipe, so PresentMon's warnings and errors can be logged, which is currently impossible in this mode.
+`NativeSession.StartInSession` has `bInheritHandles = false` and an empty `StartupInfo`, so this is a change there plus `UserSessionFrameSource`.
+
+If the pipe also gives nothing from the service launch, the next suspect is the token. `ElevatedPrimaryToken` uses the linked token only when the elevation type is `Limited`. Log the elevation type, whether the duplicated token is elevated, and PresentMon's stderr, to confirm that the child really runs elevated.
+
+### State of the first computer
+
+The service runs as LocalSystem with `UserSession: true` on the latest build and collects CPU and GPU sensors normally. No FPS sessions are saved. Afterburner and RTSS are closed.
+To retest after a fix: `git pull`, run `scripts\install-service.ps1` as Administrator, run FurMark 90 s, wait a minute, run `--sessions`.
