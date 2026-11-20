@@ -3,7 +3,11 @@
 #   powershell -ExecutionPolicy Bypass -File scripts\install-service.ps1
 
 param(
-    [string]$InstallDir = "$env:ProgramFiles\AIAnalyze"
+    [string]$InstallDir = "$env:ProgramFiles\AIAnalyze",
+
+    # Optional account to run the service as, for example an administrator account.
+    # Omit it to run as LocalSystem (the default). Pass it with: -ServiceCredential (Get-Credential)
+    [System.Management.Automation.PSCredential]$ServiceCredential
 )
 
 $ErrorActionPreference = "Stop"
@@ -28,11 +32,20 @@ dotnet publish $project -c Release -r win-x64 --self-contained true -p:PublishSi
 if ($LASTEXITCODE -ne 0) { throw "dotnet publish failed." }
 
 $exe = Join-Path $InstallDir "AIAnalyze.exe"
-New-Service -Name $serviceName `
-    -DisplayName "AIAnalyze PC Diagnostics" `
-    -Description "Samples CPU and GPU sensors and records FPS sessions locally." `
-    -BinaryPathName "`"$exe`"" `
-    -StartupType Automatic | Out-Null
+$serviceArgs = @{
+    Name           = $serviceName
+    DisplayName    = "AIAnalyze PC Diagnostics"
+    Description    = "Samples CPU and GPU sensors and records FPS sessions locally."
+    BinaryPathName = "`"$exe`""
+    StartupType    = "Automatic"
+}
+if ($ServiceCredential) {
+    $serviceArgs["Credential"] = $ServiceCredential
+    Write-Host "Service will run as $($ServiceCredential.UserName)."
+} else {
+    Write-Host "Service will run as LocalSystem."
+}
+New-Service @serviceArgs | Out-Null
 
 # Restart automatically if it crashes.
 sc.exe failure $serviceName reset= 86400 actions= restart/60000/restart/60000/restart/60000 | Out-Null
