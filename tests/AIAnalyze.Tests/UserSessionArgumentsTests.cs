@@ -5,23 +5,33 @@ namespace AIAnalyze.Tests;
 
 public class UserSessionArgumentsTests
 {
-    [Fact]
-    public void Stdout_option_is_replaced_by_output_file()
-    {
-        var args = UserSessionFrameSource.BuildArguments(
-            "--output_stdout --no_console_stats --v1_metrics --session_name AIAnalyze --stop_existing_session",
-            @"C:\ProgramData\AIAnalyze\presentmon.csv");
+    private const string Exe = @"C:\Program Files\AIAnalyze\PresentMon\PresentMon.exe";
+    private const string Csv = @"C:\ProgramData\AIAnalyze\presentmon.csv";
 
-        Assert.DoesNotContain("--output_stdout", args);
-        Assert.Contains("--no_console_stats --v1_metrics --session_name AIAnalyze --stop_existing_session", args);
-        Assert.EndsWith("--output_file \"C:\\ProgramData\\AIAnalyze\\presentmon.csv\"", args);
+    [Fact]
+    public void Command_redirects_stdout_to_the_csv_file_through_cmd()
+    {
+        var line = UserSessionFrameSource.BuildCommandLine(
+            Exe, "--output_stdout --no_console_stats --v1_metrics --session_name AIAnalyze", Csv);
+
+        Assert.Contains("cmd.exe", line, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("/c \"\"" + Exe + "\" --output_stdout --no_console_stats", line);
+        Assert.EndsWith("> \"" + Csv + "\"\"", line);
     }
 
     [Fact]
-    public void Empty_arguments_give_only_the_output_file()
+    public void Stdout_option_is_added_once_when_missing()
     {
-        var args = UserSessionFrameSource.BuildArguments("", @"C:\x\presentmon.csv");
+        var line = UserSessionFrameSource.BuildCommandLine(Exe, "--no_console_stats", Csv);
 
-        Assert.Equal("--output_file \"C:\\x\\presentmon.csv\"", args);
+        Assert.Single(System.Text.RegularExpressions.Regex.Matches(line, "--output_stdout"));
+    }
+
+    [Fact]
+    public void Output_file_option_is_not_used()
+    {
+        var line = UserSessionFrameSource.BuildCommandLine(Exe, "--output_stdout", Csv);
+
+        Assert.DoesNotContain("--output_file", line);
     }
 }

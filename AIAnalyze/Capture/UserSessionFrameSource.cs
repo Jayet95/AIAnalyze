@@ -6,8 +6,9 @@ namespace AIAnalyze.Capture;
 /// <summary>
 /// Runs PresentMon in the logged-on user's session and reads its CSV output from a file.
 /// A service runs in session 0, where PresentMon receives no present events, so the process
-/// is started in the user's session instead. PresentMon writes to a file (not stdout), which
-/// this class follows as it grows. If the console session changes, PresentMon is stopped and the
+/// is started in the user's session instead. PresentMon's stdout is redirected to the file
+/// through cmd.exe (PresentMon's own --output_file wrote nothing in testing). This class follows
+/// the file as it grows. If the console session changes, PresentMon is stopped and the
 /// iterator ends, so the caller restarts it in the new session.
 /// </summary>
 public sealed class UserSessionFrameSource(PresentMonOptions options, string csvPath)
@@ -15,16 +16,16 @@ public sealed class UserSessionFrameSource(PresentMonOptions options, string csv
     private static readonly TimeSpan PollInterval = TimeSpan.FromMilliseconds(200);
 
     /// <summary>
-    /// Builds the PresentMon arguments for file output: drops --output_stdout and adds --output_file.
+    /// Builds the cmd.exe command line that runs PresentMon with --output_stdout and writes
+    /// stdout to <paramref name="csvPath"/>. Adds --output_stdout if the arguments lack it.
     /// </summary>
-    public static string BuildArguments(string arguments, string csvPath)
+    public static string BuildCommandLine(string exePath, string arguments, string csvPath)
     {
-        var parts = arguments
-            .Split(' ', StringSplitOptions.RemoveEmptyEntries)
-            .Where(a => !string.Equals(a, "--output_stdout", StringComparison.OrdinalIgnoreCase))
-            .ToList();
-        parts.Add($"--output_file \"{csvPath}\"");
-        return string.Join(' ', parts);
+        var args = arguments.Contains("--output_stdout", StringComparison.OrdinalIgnoreCase)
+            ? arguments
+            : "--output_stdout " + arguments;
+        var cmd = Path.Combine(Environment.SystemDirectory, "cmd.exe");
+        return $"\"{cmd}\" /c \"\"{exePath}\" {args.Trim()} > \"{csvPath}\"\"";
     }
 
     public async IAsyncEnumerable<string> ReadLinesAsync(
@@ -41,7 +42,7 @@ public sealed class UserSessionFrameSource(PresentMonOptions options, string csv
         TryDelete(csvPath);
 
         var exe = options.ExecutablePath;
-        var commandLine = $"\"{exe}\" {BuildArguments(options.Arguments, csvPath)}";
+        var commandLine = BuildCommandLine(exe, options.Arguments, csvPath);
         var pid = NativeSession.StartInSession(session, commandLine, Path.GetDirectoryName(exe)!);
         onInfo?.Invoke($"Started PresentMon (pid {pid}) in console session {session}.");
 

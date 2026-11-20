@@ -128,7 +128,7 @@ Use this after the admin-account test. It needs the service to run as **LocalSys
 1. Check that PresentMon accepts the output flag:
 
    ```powershell
-   & "C:\Program Files\AIAnalyze\PresentMon\PresentMon.exe" --help | Select-String output_file
+   & "C:\Program Files\AIAnalyze\PresentMon\PresentMon.exe" --help | Select-String output_stdout
    ```
 
    If nothing is printed, send the full `--help` output instead of continuing.
@@ -137,13 +137,13 @@ Use this after the admin-account test. It needs the service to run as **LocalSys
 
    ```json
    "PresentMon": {
-     "ExecutablePath": "C:\Program Files\AIAnalyze\PresentMon\PresentMon.exe",
+     "ExecutablePath": "C:\\Program Files\\AIAnalyze\\PresentMon\\PresentMon.exe",
      "Arguments": "--no_console_stats --v1_metrics --session_name AIAnalyze --stop_existing_session",
      "UserSession": true
    }
    ```
 
-   `--output_stdout` can stay; the service removes it and writes to `C:\ProgramData\AIAnalyze\presentmon.csv` instead.
+   The service runs PresentMon with `--output_stdout` and redirects its output to `C:\ProgramData\AIAnalyze\presentmon.csv` through `cmd.exe`. Leave the arguments as above.
 
 3. Make sure you are logged on at the console, close other PresentMon tools, and play for 5 minutes, then close the game and wait 1 minute.
 
