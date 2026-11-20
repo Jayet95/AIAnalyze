@@ -11,6 +11,12 @@ public sealed class PresentMonOptions
 
     /// <summary>Command-line arguments. Check them against the installed PresentMon version's --help.</summary>
     public string Arguments { get; set; } = "";
+
+    /// <summary>
+    /// Start PresentMon in the logged-on user's session (needs the service to run as LocalSystem).
+    /// Needed because services run in session 0, where PresentMon receives no present events.
+    /// </summary>
+    public bool UserSession { get; set; }
 }
 
 /// <summary>

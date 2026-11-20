@@ -120,3 +120,33 @@ Use this only after the clean test (step 5 and 6) shows no frames. Run it with a
 4. Check the Event Log and sessions (steps 7 and 8 above). Send both back, together with the output of step 2.
 
 To return to LocalSystem, reinstall without `-ServiceCredential`.
+
+## Test: user-session mode (PresentMon runs in your logged-on session)
+
+Use this after the admin-account test. It needs the service to run as **LocalSystem**, which is the default. Reinstall without `-ServiceCredential` if the service runs as another account.
+
+1. Check that PresentMon accepts the output flag:
+
+   ```powershell
+   & "C:\Program Files\AIAnalyze\PresentMon\PresentMon.exe" --help | Select-String output_file
+   ```
+
+   If nothing is printed, send the full `--help` output instead of continuing.
+
+2. Add `"UserSession": true` to the `PresentMon` section of `C:\ProgramData\AIAnalyze\appsettings.json`, then restart the service:
+
+   ```json
+   "PresentMon": {
+     "ExecutablePath": "C:\Program Files\AIAnalyze\PresentMon\PresentMon.exe",
+     "Arguments": "--no_console_stats --v1_metrics --session_name AIAnalyze --stop_existing_session",
+     "UserSession": true
+   }
+   ```
+
+   `--output_stdout` can stay; the service removes it and writes to `C:\ProgramData\AIAnalyze\presentmon.csv` instead.
+
+3. Make sure you are logged on at the console, close other PresentMon tools, and play for 5 minutes, then close the game and wait 1 minute.
+
+4. Send back the Event Log (step 7), the `--sessions` output (step 8), and whether `C:\ProgramData\AIAnalyze\presentmon.csv` grows while the game runs.
+
+Event Log lines to expect: `Started PresentMon (pid ...) in console session ...`. If the start fails, the error includes the Win32 code, which is the important part.
