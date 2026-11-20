@@ -232,3 +232,41 @@ Suggested next checks, in order:
 
 - Each service stop leaves the `AIAnalyze` ETW trace session running, which causes the warning above at the next start. `--stop_existing_session` handles it, but the runner should stop the session on shutdown, for example by running `PresentMon --terminate_existing_session --session_name AIAnalyze` after killing the process.
 - `SessionTracker.cs(98,60)` gives compiler warning CS9124 (`start` is both captured and used to initialise `Last`). It is harmless because `start` is never reassigned, but it can be silenced by storing `start` in a field.
+
+## Round 6: service under an administrator account (main, 0ab3c7b)
+
+Run on 2026-11-20 on the first computer, following "Test: run the service under an administrator account" in the checklist.
+
+### Setup
+
+- Reinstalled with `-ServiceCredential`, account `.\jayet` (a local administrator on Windows 11 Home).
+- The service did not start at first. After the password was entered again on the **Log On** tab in `services.msc` (which grants "Log on as a service"), it started. `Win32_Service` then showed `StartName: .\jayet`, `State: Running`.
+- No other PresentMon tool was running (RTSS, Afterburner, FrameView, Adrenalin all closed).
+
+### Result: no frames, same as under LocalSystem
+
+FurMark 2 ran for 91 seconds, twice (Unix ms `1795167592997`–`1795167683941`, and `1795167830647`–`1795167921638`), each followed by a 65-second wait.
+
+| Check | Result |
+|---|---|
+| Service PresentMon | PID 25796, child of the service (PID 10296), started 11:39:18, never restarted |
+| Event Log | Only `a trace session named "AIAnalyze" is already running and it will be stopped.` at start. No errors, no `before header` line |
+| `--sessions` | Empty, after both runs |
+
+So the account is not the cause. Both LocalSystem (Round 5) and a normal administrator account give zero frames from the service's PresentMon, while an elevated PresentMon started by hand in the user session receives frames (Round 2: about 17,800 frames in 30 seconds).
+The remaining difference is the session: a service runs in session 0, and the user and the game run in session 1.
+
+### Install script gap
+
+`install-service.ps1 -ServiceCredential` creates the service but does not grant the account the "Log on as a service" right, so `Start-Service` fails with logon error 1069 until it is granted.
+On Windows Home there is no `secpol.msc`. Either grant the right in the script (for example with `ntrights.exe` or a small P/Invoke to `LsaAddAccountRights`), or add to the checklist: "if the service does not start, open `services.msc`, AIAnalyze, Log On tab, retype the password, OK, then start it".
+
+### Next step: run PresentMon in the user's session
+
+Checks 1 and 2 from Round 5 are done: LocalSystem and a user account both fail. The next options are:
+
+1. From the service, start PresentMon in the active user session with `WTSGetActiveConsoleSessionId` + `WTSQueryUserToken` + `CreateProcessAsUser`, with the elevated token. The service already runs elevated, so this avoids a UAC prompt.
+2. Or install a small helper that starts at logon (Task Scheduler, "run with highest privileges") and sends frames to the service over a named pipe or a local file.
+3. Handle fast user switching and logoff: when the active session changes, stop PresentMon and start it again in the new session.
+
+Test for option 1: with the service running, FurMark must produce sessions in `--sessions`, with no other PresentMon running.
