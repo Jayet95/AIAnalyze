@@ -1,10 +1,26 @@
+using System.ComponentModel;
 using System.Runtime.InteropServices;
+using Microsoft.Win32.SafeHandles;
 
 namespace AIAnalyze.Capture;
 
+/// <summary>A process started in a user session, with its stdout and stderr as readable streams.</summary>
+internal sealed class SessionProcess(int processId, Stream standardOutput, Stream standardError) : IDisposable
+{
+    public int ProcessId { get; } = processId;
+    public Stream StandardOutput { get; } = standardOutput;
+    public Stream StandardError { get; } = standardError;
+
+    public void Dispose()
+    {
+        StandardOutput.Dispose();
+        StandardError.Dispose();
+    }
+}
+
 /// <summary>
-/// Win32 calls needed to start a process in the logged-on user's session from a service.
-/// Only valid on Windows; the caller must be running as LocalSystem (or hold SE_TCB_NAME).
+/// Win32 calls needed to start a process in the logged-on user's session from a service, with its
+/// output on anonymous pipes. Only valid on Windows; the caller must run as LocalSystem (or hold SE_TCB_NAME).
 /// </summary>
 internal static class NativeSession
 {
@@ -13,10 +29,20 @@ internal static class NativeSession
     private const uint CreateUnicodeEnvironment = 0x00000400;
     private const uint CreateNoWindow = 0x08000000;
     private const uint MaximumAllowed = 0x02000000;
+    private const uint StartfUseStdHandles = 0x00000100;
+    private const uint HandleFlagInherit = 0x00000001;
     private const int TokenElevationTypeClass = 18;
     private const int TokenLinkedTokenClass = 19;
     private const int TokenElevationTypeLimited = 3;
     private const int TokenTypePrimary = 1;
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct SecurityAttributes
+    {
+        public int nLength;
+        public IntPtr lpSecurityDescriptor;
+        public int bInheritHandle;
+    }
 
     [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
     private struct StartupInfo
@@ -25,10 +51,14 @@ internal static class NativeSession
         public string? lpReserved;
         public string? lpDesktop;
         public string? lpTitle;
-        public int dwX, dwY, dwXSize, dwYSize, dwXCountChars, dwYCountChars, dwFillAttribute, dwFlags;
+        public int dwX, dwY, dwXSize, dwYSize, dwXCountChars, dwYCountChars, dwFillAttribute;
+        public uint dwFlags;
         public short wShowWindow;
         public short cbReserved2;
-        public IntPtr lpReserved2, hStdInput, hStdOutput, hStdError;
+        public IntPtr lpReserved2;
+        public IntPtr hStdInput;
+        public IntPtr hStdOutput;
+        public IntPtr hStdError;
     }
 
     [StructLayout(LayoutKind.Sequential)]
@@ -73,30 +103,57 @@ internal static class NativeSession
         out ProcessInformation processInformation);
 
     [DllImport("kernel32.dll", SetLastError = true)]
+    private static extern bool CreatePipe(
+        out IntPtr readPipe, out IntPtr writePipe, ref SecurityAttributes attributes, uint size);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    private static extern bool SetHandleInformation(IntPtr handle, uint mask, uint flags);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
     private static extern bool CloseHandle(IntPtr handle);
 
     /// <summary>
-    /// Starts a process with the token of the user logged on at <paramref name="sessionId"/>.
-    /// For an administrator with UAC, the elevated linked token is used so the process can start ETW traces.
-    /// Returns the new process id.
+    /// Starts a process with the token of the user logged on at <paramref name="sessionId"/>, with its
+    /// stdout and stderr on anonymous pipes. For an administrator with UAC, the elevated linked token is used.
     /// </summary>
-    internal static int StartInSession(uint sessionId, string commandLine, string workingDirectory)
+    internal static SessionProcess StartInSession(uint sessionId, string commandLine, string workingDirectory)
     {
         if (!WTSQueryUserToken(sessionId, out var userToken))
         {
-            throw new System.ComponentModel.Win32Exception(
-                System.Runtime.InteropServices.Marshal.GetLastWin32Error(), "WTSQueryUserToken failed.");
+            throw new Win32Exception(Marshal.GetLastWin32Error(), "WTSQueryUserToken failed.");
         }
 
         var primary = IntPtr.Zero;
+        var outRead = IntPtr.Zero;
+        var outWrite = IntPtr.Zero;
+        var errRead = IntPtr.Zero;
+        var errWrite = IntPtr.Zero;
         try
         {
             primary = ElevatedPrimaryToken(userToken);
+
+            // The read ends stay with the service; the write ends go to PresentMon.
+            var attributes = new SecurityAttributes
+            {
+                nLength = Marshal.SizeOf<SecurityAttributes>(),
+                bInheritHandle = 1,
+            };
+            if (!CreatePipe(out outRead, out outWrite, ref attributes, 0)
+                || !CreatePipe(out errRead, out errWrite, ref attributes, 0))
+            {
+                throw new Win32Exception(Marshal.GetLastWin32Error(), "CreatePipe failed.");
+            }
+            SetHandleInformation(outRead, HandleFlagInherit, 0);
+            SetHandleInformation(errRead, HandleFlagInherit, 0);
 
             var startup = new StartupInfo
             {
                 cb = Marshal.SizeOf<StartupInfo>(),
                 lpDesktop = "winsta0\\default",
+                dwFlags = StartfUseStdHandles,
+                hStdInput = IntPtr.Zero,
+                hStdOutput = outWrite,
+                hStdError = errWrite,
             };
 
             if (!CreateProcessAsUser(
@@ -105,23 +162,41 @@ internal static class NativeSession
                     commandLine,
                     IntPtr.Zero,
                     IntPtr.Zero,
-                    false,
+                    true,
                     CreateUnicodeEnvironment | CreateNoWindow,
                     IntPtr.Zero,
                     workingDirectory,
                     ref startup,
                     out var info))
             {
-                throw new System.ComponentModel.Win32Exception(
-                    Marshal.GetLastWin32Error(), "CreateProcessAsUser failed.");
+                throw new Win32Exception(Marshal.GetLastWin32Error(), "CreateProcessAsUser failed.");
             }
 
             CloseHandle(info.hThread);
             CloseHandle(info.hProcess);
-            return (int)info.dwProcessId;
+
+            // Close the write ends here, so the read ends see end-of-file when PresentMon exits.
+            CloseHandle(outWrite);
+            CloseHandle(errWrite);
+            outWrite = IntPtr.Zero;
+            errWrite = IntPtr.Zero;
+
+            var stdout = new FileStream(new SafeFileHandle(outRead, ownsHandle: true), FileAccess.Read, 4096, isAsync: false);
+            outRead = IntPtr.Zero;
+            var stderr = new FileStream(new SafeFileHandle(errRead, ownsHandle: true), FileAccess.Read, 4096, isAsync: false);
+            errRead = IntPtr.Zero;
+
+            return new SessionProcess((int)info.dwProcessId, stdout, stderr);
         }
         finally
         {
+            foreach (var handle in new[] { outWrite, errWrite, outRead, errRead })
+            {
+                if (handle != IntPtr.Zero)
+                {
+                    CloseHandle(handle);
+                }
+            }
             if (primary != IntPtr.Zero && primary != userToken)
             {
                 CloseHandle(primary);
@@ -148,16 +223,14 @@ internal static class NativeSession
 
         if (!GetTokenInformationHandle(userToken, TokenLinkedTokenClass, out var linked, IntPtr.Size, out _))
         {
-            throw new System.ComponentModel.Win32Exception(
-                Marshal.GetLastWin32Error(), "Could not read the linked elevated token.");
+            throw new Win32Exception(Marshal.GetLastWin32Error(), "Could not read the linked elevated token.");
         }
 
         try
         {
             if (!DuplicateTokenEx(linked, MaximumAllowed, IntPtr.Zero, 0, TokenTypePrimary, out var primary))
             {
-                throw new System.ComponentModel.Win32Exception(
-                    Marshal.GetLastWin32Error(), "DuplicateTokenEx failed.");
+                throw new Win32Exception(Marshal.GetLastWin32Error(), "DuplicateTokenEx failed.");
             }
             return primary;
         }

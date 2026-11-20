@@ -25,9 +25,6 @@ public sealed class FpsMonitorService(
     // Compositor and system presenters that are never a game.
     private static readonly string[] ExcludedApps = ["dwm.exe"];
 
-    // Output file used when PresentMon runs in the user session (UserSession = true).
-    private static readonly string PresentMonCsvPath = Path.Combine(TelemetryPaths.DataDirectory, "presentmon.csv");
-
     // Wait before restarting PresentMon, so a broken setup does not spin.
     private static readonly TimeSpan RestartDelay = TimeSpan.FromSeconds(30);
 
@@ -57,8 +54,10 @@ public sealed class FpsMonitorService(
                 try
                 {
                     var lines = options.Value.UserSession
-                        ? new UserSessionFrameSource(options.Value, PresentMonCsvPath)
-                            .ReadLinesAsync(stoppingToken, msg => logger.LogInformation("{Message}", msg))
+                        ? new UserSessionFrameSource(options.Value).ReadLinesAsync(
+                            stoppingToken,
+                            msg => logger.LogInformation("{Message}", msg),
+                            err => logger.LogWarning("PresentMon: {Line}", err))
                         : runner.ReadLinesAsync(stoppingToken, err => logger.LogWarning("PresentMon: {Line}", err));
 
                     await foreach (var line in lines)
