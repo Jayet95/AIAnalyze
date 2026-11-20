@@ -143,10 +143,10 @@ Use this after the admin-account test. It needs the service to run as **LocalSys
    }
    ```
 
-   The service runs PresentMon with `--output_stdout` and redirects its output to `C:\ProgramData\AIAnalyze\presentmon.csv` through `cmd.exe`. Leave the arguments as above.
+   The service runs PresentMon with `--output_stdout` and reads its output through an anonymous pipe, so no file is written. Leave the arguments as above.
 
 3. Make sure you are logged on at the console, close other PresentMon tools, and play for 5 minutes, then close the game and wait 1 minute.
 
-4. Send back the Event Log (step 7), the `--sessions` output (step 8), and whether `C:\ProgramData\AIAnalyze\presentmon.csv` grows while the game runs.
+4. Send back the Event Log (step 7, including the `Started PresentMon` line and any `PresentMon:` stderr lines) and the `--sessions` output (step 8).
 
 Event Log lines to expect: `Started PresentMon (pid ...) in console session ...`. If the start fails, the error includes the Win32 code, which is the important part.
