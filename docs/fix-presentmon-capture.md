@@ -124,3 +124,55 @@ Add a timer, for example once per second in `FpsMonitorService`, that closes eve
 
 The 30-second run left 9,766 junk sessions, with matching `fps_seconds` rows, in `C:\ProgramData\AIAnalyze\telemetry.db`, all with `start_utc` between `1795165768000` and `1795165787000`.
 Delete them after fix 5, or they will skew the baselines for these apps.
+
+## Round 3: review of `docs/second-computer-checklist.md` (main, e580a37)
+
+Reviewed on 2026-11-20. The code it relies on (`ff39c83`) builds, and all 38 tests pass. The order of steps, deleting `fps_seconds` before `sessions`, and the ProgramData override in step 3 are correct.
+
+### 7. Step 7 cannot show the lines it asks for (must fix)
+
+Step 7 says to look in the Event Log for `PresentMon: ...` (stderr) and `PresentMon output before header (skipped): ...`.
+Both are logged with `LogInformation` (`FpsMonitorService.cs` lines 58 and 65), and so is `Session saved`.
+The .NET Event Log provider writes only Warning and above unless configured otherwise. On this machine the log has no `Application started` line and no AIAnalyze messages at all, only the service controller's `Service started successfully.`
+So the step meant to explain missing frames will come back empty.
+
+Fix, either:
+
+- add an Event Log level to `appsettings.json`:
+
+  ```json
+  "Logging": {
+    "LogLevel": { "Default": "Information", "Microsoft.Hosting.Lifetime": "Information" },
+    "EventLog": { "LogLevel": { "Default": "Information" } }
+  }
+  ```
+
+- or log PresentMon's stderr and the before-header line at Warning.
+
+### 8. Step 2 depends on `sqlite3`, which is not installed (must fix)
+
+`sqlite3` is not on this machine, and it is not part of Windows. The checklist only says to send `Get-Command sqlite3`, so the cleanup cannot be done.
+Add a command to the app itself, which already references Microsoft.Data.Sqlite. For example `AIAnalyze --count-sessions <fromUtcMs> <toUtcMs>` and `AIAnalyze --delete-sessions <fromUtcMs> <toUtcMs>`, deleting `fps_seconds` first in one transaction.
+The service must be stopped, or the command must tolerate the WAL lock.
+
+### 9. Step 2 belongs to the first computer (should fix)
+
+The 9,766 junk sessions and their time range exist only in the first computer's database. On a real second computer the count is 0, which reads like a failure.
+Move the cleanup to a separate "first computer only" section, or say that 0 is expected on a new machine.
+
+### 10. Step 6 does not say to wait after closing the game (should fix)
+
+A session is saved only after `IdleGap` (30 s) without frames, and only with at least `MinFrames` (300) frames.
+Running `--sessions` right after quitting shows nothing. Add: "Close the game and wait at least one minute before step 8."
+
+### 11. Step 6 will likely record nothing because of fix 4 (should fix)
+
+Section 4 (no frames while the service's PresentMon runs alone) is still open. In the FurMark test the service saved frames only while a second PresentMon was running.
+RivaTuner (RTSS), NVIDIA FrameView and AMD Adrenalin all bundle PresentMon, so whether they are open changes the result.
+Have the tester write down which of them were running, and repeat the test once with all of them closed, so a pass is not caused by them.
+
+### 12. Small fixes
+
+- The checklist's code blocks are labeled `bash` but contain PowerShell. Use `powershell`.
+- The last line of `scripts/install-service.ps1` still says to set `PresentMon:ExecutablePath` in `C:\Program Files\AIAnalyze\appsettings.json`. It should point to `C:\ProgramData\AIAnalyze\appsettings.json`, as the README now does.
+- `Get-EventLog` exists only in Windows PowerShell 5.1. Use `Get-WinEvent -FilterHashtable @{LogName='Application'; ProviderName='AIAnalyze'} -MaxEvents 40 | Format-List TimeCreated, Message`, which works in 5.1 and 7.
