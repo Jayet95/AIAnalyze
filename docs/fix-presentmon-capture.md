@@ -270,3 +270,67 @@ Checks 1 and 2 from Round 5 are done: LocalSystem and a user account both fail. 
 3. Handle fast user switching and logoff: when the active session changes, stop PresentMon and start it again in the new session.
 
 Test for option 1: with the service running, FurMark must produce sessions in `--sessions`, with no other PresentMon running.
+
+## Round 7: user-session mode test (main, 851f978)
+
+Run on 2026-11-20 on the first computer. The service was reinstalled as LocalSystem (`StartName: LocalSystem`) and `C:\ProgramData\AIAnalyze\appsettings.json` was set to:
+
+```json
+{
+  "PresentMon": {
+    "ExecutablePath": "C:\Program Files\AIAnalyze\PresentMon\PresentMon.exe",
+    "Arguments": "--no_console_stats --v1_metrics --session_name AIAnalyze --stop_existing_session",
+    "UserSession": true
+  }
+}
+```
+
+### Result: the launch works, but no frames and no CSV
+
+| Check | Result |
+|---|---|
+| Launch | PresentMon (PID 30100) is a child of the service (PID 22456) and runs in **session 1** as `Jacob\jayet`. `CreateProcessAsUser` works. |
+| Output file | `C:\ProgramData\AIAnalyze\presentmon.csv` **never appears**, not before, during or after FurMark (90 s, Unix ms `1795168545816`–`1795168636820`, plus a 65 s wait). |
+| Process activity | `CPU Time: 0:00:00` after about 2 minutes and 120 handles. It does not process any events. |
+| `--sessions` | Empty. |
+| Event Log | No error. The `Started PresentMon (pid ...)` line is not there either (see issue 17). |
+
+The folder permissions are not the cause: `Users` has write/append, and the elevated administrator token has full control.
+
+### 15. `--output_file` produces no file with PresentMon 2.3.1 (must fix)
+
+To separate the file option from the session launch, PresentMon was run by hand, elevated, in the user session, during a 35-second FurMark run:
+
+```
+PresentMon.exe --no_console_stats --v1_metrics --session_name AIAnalyzeFileTest --stop_existing_session --output_file <path>\pm-file-test.csv --timed 25 --terminate_after_timed
+```
+
+It printed `Started recording.`, `Stopped recording.`, and exited with code 0 (it also said `warning: 489572 ETW events were lost.`), but **no CSV exists** at that path or anywhere else under the data folders, the install folder, System32 or the user profile.
+By contrast, `--output_stdout` with the same other arguments produced about 13,300 rows in 15 seconds in the same session (Round 2 and the probe in Round 1).
+
+So the user-session approach may be correct, but reading a file written with `--output_file` is not working. Do not build on it until it is understood.
+
+Suggested fix: keep `--output_stdout` and redirect it to the file with a shell, instead of using `--output_file`. In `UserSessionFrameSource` the command line becomes:
+
+```
+cmd.exe /c ""C:\Program Files\AIAnalyze\PresentMon\PresentMon.exe" --output_stdout <other args> > "C:\ProgramData\AIAnalyze\presentmon.csv""
+```
+
+`ReadLinesAsync` can keep following the file as it does now. `BuildArguments` should then keep `--output_stdout` and drop `--output_file`. A named pipe or inherited pipe handles (`bInheritHandles = true` with `STARTF_USESTDHANDLES`) would also work, but the redirect is the smallest change and uses the output path that is known to work.
+Kill `cmd.exe` and its child together (`Kill(entireProcessTree: true)`; the process id returned by `CreateProcessAsUser` is `cmd.exe`'s).
+
+Also check, once, whether the redirect still produces rows when run from session 1 by the service. If it does not, the problem is the launch and not the file option.
+
+### 16. Checklist JSON is invalid
+
+In "Test: user-session mode", step 2 shows `"ExecutablePath": "C:\Program Files\AIAnalyze\PresentMon\PresentMon.exe"` with single backslashes. `\P` is not a valid JSON escape, so the file does not parse. Use `C:\Program Files\AIAnalyze\PresentMon\PresentMon.exe`, as in the README.
+
+### 17. `Started PresentMon (pid ...)` never reaches the Event Log
+
+The checklist says to expect it, but it is logged with `LogInformation` (`FpsMonitorService.cs`, `msg => logger.LogInformation("{Message}", msg)`), and the Event Log keeps only Warning and above (see issue 7). A tester cannot tell whether the launch worked.
+Either log it at Warning, or add `"EventLog": { "LogLevel": { "Default": "Information" } }` to `appsettings.json`, which also fixes issue 7.
+
+### State of the first computer after this test
+
+The service runs as LocalSystem with `UserSession: true`. MSI Afterburner and RTSS are closed. The previous test sessions were removed in Round 4 and there are no sessions now.
+To retest after the fix: `git pull`, run `scripts\install-service.ps1` as Administrator, restart the service, run FurMark for 90 seconds, wait a minute, then `dotnet "C:\Program Files\AIAnalyze\AIAnalyze.dll" --sessions`.
