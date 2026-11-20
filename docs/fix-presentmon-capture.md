@@ -377,3 +377,35 @@ If the pipe also gives nothing from the service launch, the next suspect is the 
 
 The service runs as LocalSystem with `UserSession: true` on the latest build and collects CPU and GPU sensors normally. No FPS sessions are saved. Afterburner and RTSS are closed.
 To retest after a fix: `git pull`, run `scripts\install-service.ps1` as Administrator, run FurMark 90 s, wait a minute, run `--sessions`.
+
+## Round 9: pipes in user-session mode (main, cd6b8ca)
+
+Run on 2026-11-20 on the first computer. The build has 42 passing tests. The service was reinstalled as LocalSystem with `UserSession: true`.
+
+### Result: still no frames, with pipes
+
+| Check | Result |
+|---|---|
+| Launch | `Started PresentMon (pid 11580) in console session 1.` |
+| stderr pipe | Works: PresentMon's own warning now appears in the Event Log (`a trace session named "AIAnalyze" is already running and it will be stopped.`). No other stderr output, no error. |
+| FurMark | 90 s, Unix ms `1795169358494`–`1795169449507`, then a 65 s wait |
+| PresentMon activity | `CPU 0.09 s` after the 90 s run, the same value as in Round 8: it receives no events. |
+| `--sessions` | Empty. |
+
+### 19. The cause is not the output channel (must investigate)
+
+Rounds 7 and 8 suspected the file output. This round used inherited pipes for stdout and stderr, which is the same way the manual test that worked collected its output, and the result is the same: no events.
+So the difference between the working manual run (elevated PowerShell in the user session, about 13,300 rows in 15 s) and the service-launched run is something else about the process:
+
+1. **Token.** The child gets the linked elevated token only when `TokenElevationType` is `Limited`. If the duplicated token is not fully elevated, or its integrity level is Medium instead of High, PresentMon cannot receive events from other processes. A non-elevated copy prints `PresentMon requires elevated privilege ...` to stderr, but this one printed nothing like that, so it may believe it is elevated while lacking a privilege.
+2. **Environment block.** `CreateProcessAsUser` is called with a null environment, so PresentMon inherits the service's SYSTEM environment (`TEMP`, `USERPROFILE`, and so on). Build a proper block with `CreateEnvironmentBlock(token, false)` and pass `CREATE_UNICODE_ENVIRONMENT`.
+3. **Desktop and window station.** `lpDesktop` is `winsta0\default`. Confirm that PresentMon does not need anything else from the interactive desktop.
+
+To find out which one it is, log from the service, right after `CreateProcessAsUser`: `TokenElevationType`, `TokenElevation`, the integrity level RID, and whether `SeSystemProfilePrivilege` is enabled on the child.
+A quick manual comparison: run the same `PresentMon.exe --output_stdout ...` from the elevated PowerShell with `-Verb RunAs` (works) and from a `psexec -s -i 1` shell (SYSTEM in session 1), and see which one receives events.
+
+An attempt to read the child's token from the outside was made on this machine, but the elevation prompt it needed was cancelled, so there is no token data yet.
+
+### State of the first computer
+
+The service runs as LocalSystem with `UserSession: true` on `cd6b8ca` and collects CPU and GPU sensors normally. No FPS sessions are saved.
