@@ -21,6 +21,17 @@ public class Worker(ILogger<Worker> logger) : BackgroundService
         using var store = new SampleStore(Capture.TelemetryPaths.DatabasePath);
         logger.LogInformation("Sampling every {Interval} into {Db}", SampleInterval, Capture.TelemetryPaths.DatabasePath);
 
+        try
+        {
+            var specs = SystemSpecCollector.Collect();
+            var changed = store.SaveSpecsIfChanged(DateTimeOffset.UtcNow, specs);
+            logger.LogInformation("System: {Summary}{Changed}", specs.Summary, changed ? " (new snapshot saved)" : "");
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            logger.LogWarning(ex, "Could not read system specs");
+        }
+
         var nextCleanup = DateTimeOffset.UtcNow;
         var lastLogged = new Dictionary<string, DateTimeOffset>();
         using var timer = new PeriodicTimer(SampleInterval);

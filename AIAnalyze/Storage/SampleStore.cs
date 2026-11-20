@@ -47,6 +47,11 @@ public sealed class SampleStore : IDisposable
                 median_fps   REAL    NOT NULL
             );
             CREATE INDEX IF NOT EXISTS ix_sessions_app ON sessions (application, settings_key);
+            CREATE TABLE IF NOT EXISTS system_snapshots (
+                id           INTEGER PRIMARY KEY,
+                captured_utc INTEGER NOT NULL,  -- Unix milliseconds
+                specs_json   TEXT    NOT NULL
+            );
             """;
         create.ExecuteNonQuery();
     }
@@ -82,6 +87,32 @@ public sealed class SampleStore : IDisposable
             values.Add(reader.GetDouble(0));
         }
         return values;
+    }
+
+    /// <summary>
+    /// Stores a hardware/OS snapshot only when it differs from the latest stored one, so the
+    /// history shows when something changed (a new GPU driver, a RAM upgrade) without repeating daily.
+    /// Returns true when a new snapshot was written.
+    /// </summary>
+    public bool SaveSpecsIfChanged(DateTimeOffset capturedAt, SystemSpecs specs)
+    {
+        var json = specs.ToJson();
+
+        using (var latest = _connection.CreateCommand())
+        {
+            latest.CommandText = "SELECT specs_json FROM system_snapshots ORDER BY id DESC LIMIT 1;";
+            if (latest.ExecuteScalar() is string previous && previous == json)
+            {
+                return false;
+            }
+        }
+
+        using var insert = _connection.CreateCommand();
+        insert.CommandText = "INSERT INTO system_snapshots (captured_utc, specs_json) VALUES ($ts, $json);";
+        insert.Parameters.AddWithValue("$ts", capturedAt.ToUnixTimeMilliseconds());
+        insert.Parameters.AddWithValue("$json", json);
+        insert.ExecuteNonQuery();
+        return true;
     }
 
     public void WriteTick(DateTimeOffset timestamp, IReadOnlyList<SensorSample> samples)
