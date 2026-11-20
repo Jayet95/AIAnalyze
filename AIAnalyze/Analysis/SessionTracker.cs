@@ -94,6 +94,7 @@ public sealed class SessionTracker(TimeSpan idleGap, int minFrames = 1, IEnumera
     {
         private readonly List<FrameRecord> _frames = [];
         private readonly SortedDictionary<long, int> _framesPerSecond = [];
+        private readonly DateTimeOffset _start = start;
 
         public DateTimeOffset Last { get; private set; } = start;
 
@@ -114,7 +115,7 @@ public sealed class SessionTracker(TimeSpan idleGap, int minFrames = 1, IEnumera
             }
 
             var seconds = _framesPerSecond.Select(p => new FpsSecond(p.Key, p.Value)).ToList();
-            return new CompletedSession(application, start, Last, _frames.Count, fps.Value, seconds);
+            return new CompletedSession(application, _start, Last, _frames.Count, fps.Value, seconds);
         }
     }
 }
