@@ -10,7 +10,7 @@ namespace AIAnalyze;
 public class Worker(ILogger<Worker> logger) : BackgroundService
 {
     private static readonly TimeSpan SampleInterval = TimeSpan.FromSeconds(1);
-    private static readonly TimeSpan Retention = TimeSpan.FromDays(7);
+    private static readonly TimeSpan Retention = TimeSpan.FromDays(2);
     private static readonly TimeSpan CleanupInterval = TimeSpan.FromHours(1);
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)

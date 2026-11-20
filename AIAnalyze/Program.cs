@@ -18,6 +18,11 @@ if (args.Contains("--dump-sensors"))
 }
 
 var builder = Host.CreateApplicationBuilder(args);
+
+// Runs as a Windows service when installed with the install script; a normal console run still works.
+builder.Services.AddWindowsService(options => options.ServiceName = "AIAnalyze");
+builder.Logging.AddEventLog();
+
 builder.Services.Configure<AIAnalyze.Capture.PresentMonOptions>(
     builder.Configuration.GetSection("PresentMon"));
 builder.Services.AddHostedService<Worker>();
