@@ -30,7 +30,13 @@ Expected: `Running`.
 
 ## 5. Make sure no other PresentMon is running
 
-RivaTuner (RTSS), NVIDIA FrameView and AMD Adrenalin all bundle PresentMon, and their presence changed the result in the earlier test. Write down which of them are running now. Run this first test with all of them **closed**.
+RivaTuner (RTSS), NVIDIA FrameView and AMD Adrenalin all bundle PresentMon, and their presence changed the result in the earlier test. Check what is running:
+
+```powershell
+Get-Process RTSS, RTSSHooksLoader64, MSIAfterburner, FrameView*, RadeonSoftware -ErrorAction SilentlyContinue | Select-Object Name, Id
+```
+
+Close them all before the first test. MSI Afterburner starts RTSS again, so close Afterburner from the tray (right-click, Exit), not only RTSS. Leave `nvcontainer` running, because it belongs to the NVIDIA driver.
 
 ## 6. Play a game for at least 5 minutes, then close it and wait 1 minute
 
@@ -59,9 +65,10 @@ dotnet "C:\Program Files\AIAnalyze\AIAnalyze.dll" --timeline <id>
 
 Replace `<id>` with the game's id from the `--sessions` output.
 
-## First computer only: delete the junk test sessions
+## First computer only (Administrator): delete the junk test sessions
 
 Skip this on a new machine. A count of 0 is expected there.
+Run this section in an elevated window. The database is owned by the service account, and `Stop-Service` needs Administrator.
 
 The 9,766 junk sessions from the 30-second run exist only on the first computer. Stop the service, count, delete, and start it again. Stop the service first, so the delete does not compete with it for the database.
 
@@ -79,7 +86,7 @@ Start-Service AIAnalyze
 
 ## What to send back
 
-- The output of steps 3 and 5 (which PresentMon-related tools were running).
+- The output of step 3, and the output of the process check in step 5.
 - The Event Log output from step 7.
 - The `--sessions` output from step 8.
 - For the first computer, the counts from the cleanup.
