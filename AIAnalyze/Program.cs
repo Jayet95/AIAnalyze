@@ -17,6 +17,32 @@ if (args.Contains("--dump-sensors"))
     return;
 }
 
+// Session cleanup by start time range, in Unix milliseconds: --count-sessions <from> <to> and --delete-sessions <from> <to>.
+var rangeCommand = args.FirstOrDefault(a => a is "--count-sessions" or "--delete-sessions");
+if (rangeCommand is not null)
+{
+    var rangeIndex = Array.IndexOf(args, rangeCommand);
+    if (rangeIndex + 2 >= args.Length
+        || !long.TryParse(args[rangeIndex + 1], out var fromMs)
+        || !long.TryParse(args[rangeIndex + 2], out var toMs))
+    {
+        Console.WriteLine($"Usage: AIAnalyze {rangeCommand} <fromUnixMs> <toUnixMs>");
+        return;
+    }
+
+    // The service may be writing; stop it first so the delete does not wait on its lock.
+    using var rangeStore = new AIAnalyze.Storage.SampleStore(AIAnalyze.Capture.TelemetryPaths.DatabasePath);
+    if (rangeCommand == "--count-sessions")
+    {
+        Console.WriteLine($"Sessions in range: {rangeStore.CountSessionsBetween(fromMs, toMs)}");
+    }
+    else
+    {
+        Console.WriteLine($"Deleted sessions: {rangeStore.DeleteSessionsBetween(fromMs, toMs)}");
+    }
+    return;
+}
+
 if (args.Contains("--sessions"))
 {
     // Lists recent saved sessions so one can be inspected with --timeline <id>.

@@ -1,82 +1,88 @@
 # Second computer: checklist
 
-Work through these in order. Commands run in PowerShell. Steps 2 and 4 need an elevated (Administrator) window.
-
-The installed service still runs the old build until step 4 reinstalls it.
+Commands run in PowerShell. Steps marked **Administrator** need an elevated window.
 
 ## 1. Pull the latest code
 
-```bash
+```powershell
 git pull
 ```
 
-## 2. Stop the service and delete the junk test sessions
+## 2. Install the latest build as a service (Administrator)
 
-```bash
-Stop-Service AIAnalyze
-sqlite3 C:\ProgramData\AIAnalyze\telemetry.db "SELECT COUNT(*) FROM sessions WHERE start_utc BETWEEN 1795165768000 AND 1795165787000;"
-```
-
-If the count is about 9,766, delete the sessions and their per-second FPS rows:
-
-```bash
-sqlite3 C:\ProgramData\AIAnalyze\telemetry.db "DELETE FROM fps_seconds WHERE session_id IN (SELECT id FROM sessions WHERE start_utc BETWEEN 1795165768000 AND 1795165787000); DELETE FROM sessions WHERE start_utc BETWEEN 1795165768000 AND 1795165787000;"
-```
-
-Delete `fps_seconds` first, because it refers to `sessions`.
-
-If `sqlite3` is not installed, run `Get-Command sqlite3` and send the output.
-
-## 3. Check the PresentMon override file
-
-The file `C:\ProgramData\AIAnalyze\appsettings.json` must hold the PresentMon path. It survives reinstalls. If it does not exist, create it as in the README (second computer test, step 5).
-
-## 4. Reinstall the service with the latest code
-
-```bash
+```powershell
 powershell -ExecutionPolicy Bypass -File scripts\install-service.ps1
 ```
 
 The script publishes the new build, recreates the service, and starts it.
 
-## 5. Check that the service is running
+## 3. Check the service
 
-```bash
+```powershell
 Get-Service AIAnalyze
 ```
 
-Expected output: `Running`.
+Expected: `Running`.
 
-## 6. Play a game for at least 5 minutes
+## 4. Check the PresentMon override file
 
-Five minutes gives enough frames for a session to be saved.
+`C:\ProgramData\AIAnalyze\appsettings.json` must hold the PresentMon path. It survives reinstalls. If it is missing, create it as in the README (second computer test, step 5).
 
-## 7. Send the service log
+## 5. Make sure no other PresentMon is running
 
-```bash
-Get-EventLog -LogName Application -Source AIAnalyze -Newest 40 | Format-List TimeGenerated, Message
+RivaTuner (RTSS), NVIDIA FrameView and AMD Adrenalin all bundle PresentMon, and their presence changed the result in the earlier test. Write down which of them are running now. Run this first test with all of them **closed**.
+
+## 6. Play a game for at least 5 minutes, then close it and wait 1 minute
+
+A session is saved only after 30 seconds without frames, and only with at least 300 frames. Running the next step right after quitting shows nothing.
+
+## 7. Read the warnings in the Event Log
+
+```powershell
+Get-WinEvent -FilterHashtable @{LogName='Application'; ProviderName='AIAnalyze'} -MaxEvents 40 | Format-List TimeCreated, Message
 ```
 
-Look for:
+The Event Log keeps only Warning and above, so these lines are the ones to look for:
 
-- `PresentMon: ...` lines. These are PresentMon's own error output. An error here explains missing frames.
-- `PresentMon output before header (skipped): ...`. This shows the first line PresentMon printed.
+- `PresentMon: ...` is PresentMon's own error output.
+- `PresentMon output before header (skipped): ...` shows the first line PresentMon printed.
+- `PresentMon exited. Restarting ...` means PresentMon stopped.
+
+Session saves are Information and do not appear here. Check them with step 8.
 
 ## 8. Check sessions and the timeline
 
-```bash
+```powershell
 dotnet "C:\Program Files\AIAnalyze\AIAnalyze.dll" --sessions
 dotnet "C:\Program Files\AIAnalyze\AIAnalyze.dll" --timeline <id>
 ```
 
 Replace `<id>` with the game's id from the `--sessions` output.
 
+## First computer only: delete the junk test sessions
+
+Skip this on a new machine. A count of 0 is expected there.
+
+The 9,766 junk sessions from the 30-second run exist only on the first computer. Stop the service, count, delete, and start it again. Stop the service first, so the delete does not compete with it for the database.
+
+```powershell
+Stop-Service AIAnalyze
+dotnet "C:\Program Files\AIAnalyze\AIAnalyze.dll" --count-sessions 1795165768000 1795165787000
+```
+
+If the count is about 9,766:
+
+```powershell
+dotnet "C:\Program Files\AIAnalyze\AIAnalyze.dll" --delete-sessions 1795165768000 1795165787000
+Start-Service AIAnalyze
+```
+
 ## What to send back
 
-- The output of step 2's count query.
-- The output of step 5.
+- The output of steps 3 and 5 (which PresentMon-related tools were running).
 - The Event Log output from step 7.
 - The `--sessions` output from step 8.
+- For the first computer, the counts from the cleanup.
 
 ## Known open problem
 

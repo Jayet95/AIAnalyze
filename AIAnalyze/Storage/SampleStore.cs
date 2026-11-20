@@ -100,6 +100,42 @@ public sealed class SampleStore : IDisposable
         return sessionId;
     }
 
+    /// <summary>Number of sessions that started within the range (Unix milliseconds, inclusive).</summary>
+    public long CountSessionsBetween(long fromMs, long toMs)
+    {
+        using var cmd = _connection.CreateCommand();
+        cmd.CommandText = "SELECT COUNT(*) FROM sessions WHERE start_utc BETWEEN $from AND $to;";
+        cmd.Parameters.AddWithValue("$from", fromMs);
+        cmd.Parameters.AddWithValue("$to", toMs);
+        return (long)cmd.ExecuteScalar()!;
+    }
+
+    /// <summary>
+    /// Deletes sessions that started within the range (Unix milliseconds, inclusive) and their
+    /// per-second FPS rows, in one transaction. Returns the number of sessions deleted.
+    /// </summary>
+    public long DeleteSessionsBetween(long fromMs, long toMs)
+    {
+        using var transaction = _connection.BeginTransaction();
+
+        using var seconds = _connection.CreateCommand();
+        seconds.Transaction = transaction;
+        seconds.CommandText = "DELETE FROM fps_seconds WHERE session_id IN (SELECT id FROM sessions WHERE start_utc BETWEEN $from AND $to);";
+        seconds.Parameters.AddWithValue("$from", fromMs);
+        seconds.Parameters.AddWithValue("$to", toMs);
+        seconds.ExecuteNonQuery();
+
+        using var sessions = _connection.CreateCommand();
+        sessions.Transaction = transaction;
+        sessions.CommandText = "DELETE FROM sessions WHERE start_utc BETWEEN $from AND $to;";
+        sessions.Parameters.AddWithValue("$from", fromMs);
+        sessions.Parameters.AddWithValue("$to", toMs);
+        var deleted = sessions.ExecuteNonQuery();
+
+        transaction.Commit();
+        return deleted;
+    }
+
     /// <summary>Most recent sessions first, for picking one to inspect.</summary>
     public IReadOnlyList<StoredSession> ListSessions(int limit)
     {

@@ -55,14 +55,14 @@ public sealed class FpsMonitorService(
                 {
                     await foreach (var line in runner.ReadLinesAsync(
                         stoppingToken,
-                        err => logger.LogInformation("PresentMon: {Line}", err)))
+                        err => logger.LogWarning("PresentMon: {Line}", err)))
                     {
                         if (!lineParser.TryParse(line, out var frame) || frame is null)
                         {
                             // Show the first line before the header once, so unexpected PresentMon output can be diagnosed.
                             if (!lineParser.HeaderFound && !loggedPreHeaderLine && line.Trim().Length > 0)
                             {
-                                logger.LogInformation("PresentMon output before header (skipped): {Line}", line.Trim());
+                                logger.LogWarning("PresentMon output before header (skipped): {Line}", line.Trim());
                                 loggedPreHeaderLine = true;
                             }
                             continue;

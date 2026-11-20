@@ -40,4 +40,4 @@ sc.exe failure $serviceName reset= 86400 actions= restart/60000/restart/60000/re
 Start-Service -Name $serviceName
 Write-Host "Installed and started service '$serviceName' from $InstallDir"
 Write-Host "Data folder: $env:ProgramData\AIAnalyze"
-Write-Host "To enable FPS capture, set PresentMon:ExecutablePath in $InstallDir\appsettings.json and restart the service."
+Write-Host "To enable FPS capture, set PresentMon:ExecutablePath in $env:ProgramData\AIAnalyze\appsettings.json and restart the service."
