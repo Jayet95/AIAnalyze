@@ -199,3 +199,36 @@ Add **(Administrator)** to the section title.
 - MSI Afterburner starts RTSS, and both run elevated, so they must be closed from the tray (right-click → Exit) or from an elevated window. Closing only RTSS lets Afterburner start it again.
 - `nvcontainer` belongs to the NVIDIA driver and is not FrameView. Leave it running.
 - In "What to send back", step 5 has no command output, so ask for the output of the command above instead.
+
+## Round 5: clean capture test, nothing else running (main, 31a619d)
+
+Run on 2026-11-20 on the first computer, following the revised checklist.
+
+| Step | Result |
+|---|---|
+| 5. Other tools | MSI Afterburner and RTSS closed. No RTSS, FrameView, Adrenalin or other PresentMon process running. `nvcontainer` (NVIDIA driver) left running. |
+| 6. Load | FurMark 2, `--demo furmark-gl --width 1280 --height 720 --max-time 90`, from Unix ms `1795166868146` to `1795166959161`, then a 65-second wait. |
+| 7. Event Log | Only `PresentMon: warning: a trace session named "AIAnalyze" is already running and it will be stopped.`, once per service start. No `before header` line, no `PresentMon exited`, no errors. |
+| 8. `--sessions` | Empty. The `sessions` table has 0 rows. |
+
+The service's PresentMon was alive throughout: PID 23252, a child of the service (PID 14068), started at service start (11:24:38) and never restarted.
+It printed nothing to stdout, not even the CSV header, and nothing to stderr after the startup warning.
+
+### Section 4 is confirmed
+
+With no other PresentMon running anywhere, the service's PresentMon (LocalSystem, session 0) receives no present events.
+In Round 2 the same setup saved frames only while an elevated PresentMon ran in the user session at the same time.
+This is now the blocking problem for FPS capture. Fixes 5 and 6 cannot be checked on real data until it is solved.
+
+RTSS is probably not a factor: while it was running, its `PresentMonDataProvider` process was not, so it was not running a PresentMon session.
+
+Suggested next checks, in order:
+
+1. Run PresentMon by hand as LocalSystem (`psexec -s -i -d` or a scheduled task running as SYSTEM) with the same arguments and `--output_file`. Does it write a header and rows while FurMark runs?
+2. Run the service under an administrator account instead of LocalSystem (`sc.exe config AIAnalyze obj= .\<user> password= ...`) and repeat the FurMark test.
+3. If only the user session works, start PresentMon in the logged-on user's session from the service (`WTSQueryUserToken` + `CreateProcessAsUser`), or have a small helper started at logon pipe frames to the service.
+
+### Two smaller observations
+
+- Each service stop leaves the `AIAnalyze` ETW trace session running, which causes the warning above at the next start. `--stop_existing_session` handles it, but the runner should stop the session on shutdown, for example by running `PresentMon --terminate_existing_session --session_name AIAnalyze` after killing the process.
+- `SessionTracker.cs(98,60)` gives compiler warning CS9124 (`start` is both captured and used to initialise `Last`). It is harmless because `start` is never reassigned, but it can be silenced by storing `start` in a field.
