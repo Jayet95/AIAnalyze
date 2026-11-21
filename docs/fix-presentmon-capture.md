@@ -461,3 +461,57 @@ The temperature column avoids the same problem by also accepting `Tctl/Tdie`. Fo
 From 04:06 to 14:45 the service logged `FPS capture stopped unexpectedly. Restarting in 00:00:30.` with a stack trace, once every 30 seconds, because nobody was logged on at the console and `UserSessionFrameSource` throws `No user is logged on at the console, so PresentMon cannot start.`
 This is an expected state, not an error. Log a single Warning without a stack trace, wait quietly (for example poll `WTSGetActiveConsoleSessionId` every 5–10 seconds), and start PresentMon as soon as a user session exists.
 It recovered by itself at 14:46:04 when the user logged on.
+
+## Round 11: test of `46117e5` (web UI, session findings, GPU choice)
+
+Run on 2026-11-21 on the first computer. Build: 62 passing tests. Reinstalled with `scripts\install-service.ps1 -NoBrowser` as LocalSystem. The install kept `C:\ProgramData\AIAnalyze\appsettings.json` and the existing `C:\Program Files\AIAnalyze\PresentMon\PresentMon.exe`.
+
+### What works
+
+| Item | Result |
+|---|---|
+| Web UI | Listens on `127.0.0.1:5280` only (`UseUrls`), all routes are GET. `/api/status` answers 200: `capture.state: Running`, `userSession: true`, `currentApplication: dwm.exe`. |
+| Capture | Sessions saved for `furmark.exe`, `Code.exe`, `Surfshark.exe` and `KingdomCome.exe`. `dwm.exe` is not saved as a session. |
+| GPU choice (issue 20) | `--timeline 10` prints `GPU columns: NVIDIA GeForce RTX 5080`. `GPU %` is 99 and `GPU MHz` about 2,800, instead of 0 and 600 from the integrated GPU. |
+| CPU power (issue 21) | `CPU W` shows 48–72 W on the AMD Ryzen 7 7800X3D. |
+| Findings | The FurMark session got `GpuBound` (Info): "The GPU was 99% busy (median) ... a faster CPU will not [help]". Correct for FurMark. |
+| Quiet wait for a user (issue 22) | Not re-tested (the machine was not at the login screen). |
+
+FurMark session id 10: 31,308 frames, 61 s, median 548.8 FPS, started 15:17:58 local.
+
+### 23. The Stutter finding fires on partial boundary seconds (should fix)
+
+The same session also got a Warning: `7% of seconds fell below half the median FPS (521). Drops this frequent feel like stutter ...`.
+FurMark at a fixed 1280×720 is steady, so this looks like a false positive. The first row of the timeline is a partial second:
+
+```
+15:17:58   137  ...   <- session starts part-way into this second
+15:17:59   686
+15:18:00   432
+```
+
+The first and last seconds of a session contain only part of a second of frames, so their FPS is low by construction. `7%` of 61 seconds is about 4 seconds: the first and last seconds plus a couple of others.
+Fix: exclude the first and last wall-clock second of the session from the stutter calculation (and from the median used as the reference), and require a minimum number of seconds (for example 10) before reporting stutter at all. Add a test with a steady 500 FPS session whose first and last seconds have 100 frames each: it must produce no Stutter finding.
+Also worth checking whether other findings (FPS drop against baseline, frame cap) use the same per-second counts.
+
+### 24. ASP.NET request logging floods the Event Log (should fix)
+
+`appsettings.json` has `EventLog:LogLevel:Default = Information` (added to make the `Started PresentMon` line visible). Because of that, every request to the UI writes about four Event Log entries from `Microsoft.AspNetCore.Hosting.Diagnostics`, `Microsoft.AspNetCore.Routing.EndpointMiddleware` and `Microsoft.AspNetCore.Http.Result.OkObjectResult` (`Request starting HTTP/1.1 GET .../api/status`, `Executed endpoint ...`, `Writing value of type ...`).
+In 5 minutes with one open request pattern there were 33 AIAnalyze events, 12 of them from ASP.NET. A browser tab polling `/api/live` would write thousands per hour and push useful entries out of the Application log.
+Fix: add to the `Logging:LogLevel` section (which `EventLog` inherits):
+
+```json
+"Microsoft.AspNetCore": "Warning"
+```
+
+and keep `AIAnalyze` at Information.
+
+### 25. The database grows about 1.4 GB per day (note)
+
+`C:\ProgramData\AIAnalyze\telemetry.db` is 1,348 MB after about 28.6 hours: 13,996,576 rows in `samples` (about 136 rows per second, since every sensor of every device is stored every second), with 2-day retention.
+At steady state that is about 3 GB. Disk space is not a problem here (about 900 GB free), but it will slow `--sessions`, timelines and the UI over time. Options: store only the sensors the timeline and findings use, store the other sensors every 5–10 seconds, or add an index on `(ts_utc)` if one is missing and check query times.
+Also check that the retention cleanup runs `VACUUM` (or `PRAGMA wal_checkpoint`) occasionally, or the file will not shrink after old rows are deleted.
+
+### State of the first computer
+
+The service runs as LocalSystem with `UserSession: true` on `46117e5`. FPS sessions are saved and the UI works.
