@@ -409,3 +409,55 @@ An attempt to read the child's token from the outside was made on this machine, 
 ### State of the first computer
 
 The service runs as LocalSystem with `UserSession: true` on `cd6b8ca` and collects CPU and GPU sensors normally. No FPS sessions are saved.
+
+## Round 10: FPS capture works after a reboot; timeline shows wrong GPU and no CPU power
+
+Run on 2026-11-21 on the first computer, on `main` at `cd6b8ca` (the pipe build installed on 2026-11-20). The service runs as LocalSystem with `UserSession: true`.
+
+### FPS capture works
+
+After the computer was restarted (boot at 04:08), sessions were saved with no other change:
+
+| id | Application | Frames | Median FPS |
+|---|---|---|---|
+| 1 | `steamwebhelper.exe` | 7,364 | 144.0 |
+| 3 | `Code.exe` | 13,761 | 143.7 |
+| 2 | `furmark.exe` (FurMark 2, 60 s, Unix ms `1795265343063`–`1795265404651`) | 32,010 | 585.0 |
+
+During the FurMark run the PresentMon child's CPU time rose from 0.80 s to 1.63 s. In Rounds 5–9 it stayed at 0.09 s. `--timeline 2` prints one row per second with FPS next to CPU and GPU readings.
+
+The token was checked while the problem was still open: the service-launched PresentMon had `elevated=1`, `elevationType=2` (full) and integrity RID `0x3000` (High), the same as an elevated PowerShell. **So hypothesis 1 of Round 9 (token) is ruled out.** The environment block (hypothesis 2) was not tested.
+
+Why it started working is not known. Rounds 5–9 failed on the same code (Rounds 8 and 9 at `586ecaf` and `cd6b8ca`), and the only change is the reboot. A leftover ETW trace session named `AIAnalyze` from the earlier runs is a candidate, but this is unproven. If it happens again, check `logman query -ets` for stale `AIAnalyze` sessions before changing code.
+
+### 20. The timeline reads GPU load and clock from the integrated GPU (must fix)
+
+This machine has two GPUs, listed by the library in this order:
+
+1. `AMD Radeon(TM) Graphics` (integrated, `GpuAmd`)
+2. `NVIDIA GeForce RTX 5080` (`GpuNvidia`), the one that renders FurMark and the games
+
+`SessionTimeline.cs` defines the GPU columns with `name == "GPU Core"` (lines 24–26) and the comment at line 37 says that when several sensors match, **the first one wins**. Both GPUs have `Load` and `Clock` sensors named `GPU Core`, so:
+
+- `GPU %` is the integrated GPU's load: always `0.0` during FurMark.
+- `GPU MHz` is the integrated GPU's clock: `600.0` throughout.
+- `GPU °C` happens to come from the RTX, because the integrated GPU's temperature sensor is called `GPU VR SoC`, not `GPU Core`. So one row mixes two different GPUs.
+
+Fix: pick one GPU per session and read all its columns from that device.
+
+- Prefer a discrete GPU: `GpuNvidia`, then a `GpuAmd` that is not the integrated one, before an integrated one. A reliable test is the dedicated memory total: the integrated GPU reports `GPU Memory Total` 512 MB, the RTX 16,303 MB.
+- Better: choose the GPU with the highest median `GPU Core` load over the session, so a laptop or a game running on the integrated GPU still works.
+- Add an optional override (for example `Timeline:GpuName` in `appsettings.json`) for cases the rule gets wrong.
+- Use the sensor's hardware identifier (`/gpu-nvidia/0`, `/gpu-amd/0`) or the `hardware` column in `samples` to filter. Do not use the list position: on this machine the RTX is the second GPU, but the order can change.
+- Add a test with two GPUs that both have a `GPU Core` sensor, and check that the discrete one is used for temperature, load and clock.
+
+### 21. `CPU W` is always empty (must fix)
+
+`SessionTimeline.cs` line 23 matches the power sensor with `name == "CPU Package"`. On this AMD Ryzen 7 7800X3D the sensor is called **`Package`** (`Power`, about 31–38 W in the dumps; `Core #N (SMU)` for single cores). So the column prints `-` on every row.
+The temperature column avoids the same problem by also accepting `Tctl/Tdie`. For power, accept `CPU Package` (Intel) and `Package` (AMD), restricted to the CPU hardware, and add a test with the AMD name.
+
+### 22. Boot with no logged-on user fills the Event Log with errors (should fix)
+
+From 04:06 to 14:45 the service logged `FPS capture stopped unexpectedly. Restarting in 00:00:30.` with a stack trace, once every 30 seconds, because nobody was logged on at the console and `UserSessionFrameSource` throws `No user is logged on at the console, so PresentMon cannot start.`
+This is an expected state, not an error. Log a single Warning without a stack trace, wait quietly (for example poll `WTSGetActiveConsoleSessionId` every 5–10 seconds), and start PresentMon as soon as a user session exists.
+It recovered by itself at 14:46:04 when the user logged on.
