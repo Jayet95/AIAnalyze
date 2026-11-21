@@ -101,6 +101,33 @@ Data: `GET /api/live?minutes=5` every 2 s while the tab is visible → `{ gpu, p
 - The GPU name above the charts (`gpu`).
 - An FPS capture panel from `/api/status.capture`: state message, last frame (time and application), last saved session.
 
+### 4.3a Cooling (card on Live, and on Health under "Right now")
+
+Data: `GET /api/cooling` every 5 s while visible (503 `{ "error": ... }` until the first reading).
+
+```json
+{
+  "atUtc": "2026-11-21T13:59:59+00:00",
+  "gpus": [
+    { "name": "NVIDIA GeForce RTX 4070", "fanCount": 2,
+      "fans": [ { "name": "GPU Fan 1", "rpm": 1480, "percent": 52 },
+                { "name": "GPU Fan 2", "rpm": 1495, "percent": 52 } ],
+      "zeroRpm": false }
+  ],
+  "systemFans": [ { "name": "CPU Fan", "rpm": 1100, "percent": 45 } ],
+  "pumps": [ { "name": "AIO Pump", "rpm": 2700, "percent": 100 } ],
+  "coolingType": "Liquid",
+  "coolingTypeReason": "A pump is running at 2700 RPM, so this PC uses liquid cooling (an AIO or a custom loop)."
+}
+```
+
+- `coolingType` is `Liquid`, `Air` or `Unknown`. It is **inferred**, not reported by the hardware: show it as "Liquid cooling (detected)" with `coolingTypeReason` in a tooltip or small text. Icons: a droplet for liquid, a fan for air, a question mark for unknown.
+- `rpm` and `percent` can each be null. Show "–" for a missing value, never 0.
+- **GPU block:** for each GPU, the card name and "2 fans", then one row per fan with a spinning fan icon (spin speed roughly following `percent`; static when `rpm` is 0), RPM in large tabular numbers and percent as a small bar. When `zeroRpm` is true, show "Fans stopped: normal at low temperature (zero-RPM mode)" in neutral grey, not as a warning.
+- **System block:** "CPU and case fans" rows the same way; "Pump" rows with a droplet icon.
+- **Unknown:** one calm line with `coolingTypeReason` and no empty tables. On laptops this is the normal state.
+- Empty `gpus` with a known GPU elsewhere means the card doesn't report its fans; say "This graphics card doesn't report its fans."
+
 ### 4.4 Sessions
 
 List data: `GET /api/sessions?limit=200` every 30 s. Each row: application, start time, duration (`durationSeconds`), median FPS, worst-severity badge (`worst`, may be null).

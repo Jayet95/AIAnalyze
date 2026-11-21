@@ -22,7 +22,8 @@ public static class DiagnosticContext
         CaptureStatus? capture,
         long? focusSessionId,
         DateTimeOffset now,
-        Health.HealthReport? health = null)
+        Health.HealthReport? health = null,
+        Sensors.CoolingReport? cooling = null)
     {
         var sb = new StringBuilder();
         sb.AppendLine($"Current local time: {Local(now)}.");
@@ -31,6 +32,7 @@ public static class DiagnosticContext
         AppendSpecs(sb, store);
         AppendHealth(sb, health ?? store.GetLatestHealthReport());
         AppendNow(sb, store, capture);
+        AppendCooling(sb, cooling);
         AppendAlerts(sb, store);
         AppendSessions(sb, store);
 
@@ -130,6 +132,34 @@ public static class DiagnosticContext
             sb.AppendLine("- Last 2 minutes: " + string.Join("; ", SessionTimeline.Metrics
                 .Select(m => SummarizeColumn(rows, m.Label))
                 .Where(x => x is not null)));
+        }
+        sb.AppendLine();
+    }
+
+    private static void AppendCooling(StringBuilder sb, Sensors.CoolingReport? cooling)
+    {
+        if (cooling is null)
+        {
+            return;
+        }
+
+        string Fan(Sensors.FanReading f) =>
+            $"{f.Name} {(f.Rpm is null ? "n/a" : $"{f.Rpm:0} RPM")}{(f.Percent is null ? "" : $" ({f.Percent:0}%)")}";
+
+        sb.AppendLine("## Cooling (right now)");
+        sb.AppendLine($"- Cooling type (inferred, not reported by hardware): {cooling.CoolingType}. {cooling.CoolingTypeReason}");
+        foreach (var gpu in cooling.Gpus)
+        {
+            sb.AppendLine($"- {gpu.Name}: {gpu.FanCount} fan(s){(gpu.ZeroRpm ? ", all stopped (zero-RPM mode at low temperature)" : "")}: " +
+                string.Join(", ", gpu.Fans.Select(Fan)));
+        }
+        if (cooling.Pumps.Count > 0)
+        {
+            sb.AppendLine("- Pumps: " + string.Join(", ", cooling.Pumps.Select(Fan)));
+        }
+        if (cooling.SystemFans.Count > 0)
+        {
+            sb.AppendLine("- CPU and case fans: " + string.Join(", ", cooling.SystemFans.Select(Fan)));
         }
         sb.AppendLine();
     }

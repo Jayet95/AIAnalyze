@@ -143,6 +143,7 @@ builder.WebHost.UseUrls($"http://127.0.0.1:{port}");
 
 builder.Services.Configure<PresentMonOptions>(builder.Configuration.GetSection("PresentMon"));
 builder.Services.AddSingleton<CaptureStatus>();
+builder.Services.AddSingleton<LatestSensors>();
 var claudeOptions = builder.Configuration.GetSection("Claude").Get<AIAnalyze.Chat.ClaudeOptions>() ?? new();
 builder.Services.AddSingleton(claudeOptions);
 builder.Services.AddSingleton(new AIAnalyze.Chat.ClaudeChat(claudeOptions));

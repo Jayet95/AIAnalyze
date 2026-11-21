@@ -7,7 +7,7 @@ namespace AIAnalyze;
 /// Samples CPU/GPU sensors once per second, stores them locally, and logs temperature warnings.
 /// Only the sensors the app reads back are stored (see <see cref="SampleSelection"/>); old data is pruned hourly.
 /// </summary>
-public class Worker(ILogger<Worker> logger) : BackgroundService
+public class Worker(ILogger<Worker> logger, LatestSensors latest) : BackgroundService
 {
     private static readonly TimeSpan SampleInterval = TimeSpan.FromSeconds(1);
     private static readonly TimeSpan Retention = TimeSpan.FromDays(2);
@@ -42,6 +42,7 @@ public class Worker(ILogger<Worker> logger) : BackgroundService
             {
                 var now = DateTimeOffset.UtcNow;
                 var samples = reader.ReadOnce();
+                latest.Set(now, samples);
                 store.WriteTick(now, SampleSelection.ToStore(samples));
                 LogThermalFindings(store, samples, now, lastLogged);
 

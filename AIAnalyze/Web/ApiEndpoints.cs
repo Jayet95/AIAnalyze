@@ -54,6 +54,11 @@ public static class ApiEndpoints
             return Results.Accepted();
         });
 
+        api.MapGet("/cooling", (Sensors.LatestSensors latest) =>
+            latest.Current is { } now
+                ? Results.Ok(Sensors.CoolingSummary.Build(now.AtUtc, now.Samples))
+                : Results.Json(new { error = "No sensor readings yet." }, statusCode: StatusCodes.Status503ServiceUnavailable));
+
         api.MapGet("/specs", () =>
         {
             using var store = Open();

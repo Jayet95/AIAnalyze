@@ -14,8 +14,8 @@ public sealed record SensorSample(
     float? Value);
 
 /// <summary>
-/// Reads CPU and GPU sensors through LibreHardwareMonitorLib.
-/// Stores every sensor on those devices. Needs administrator rights for full CPU telemetry.
+/// Reads CPU, GPU, motherboard (fan headers) and liquid-cooler sensors through LibreHardwareMonitorLib.
+/// Needs administrator rights and the PawnIO driver for full CPU and motherboard telemetry.
 /// </summary>
 public sealed class SensorReader : IDisposable
 {
@@ -28,6 +28,9 @@ public sealed class SensorReader : IDisposable
         {
             IsCpuEnabled = true,
             IsGpuEnabled = true,
+            // Motherboard fan headers (CPU, case, pump) and USB liquid coolers (AIOs), for the cooling summary.
+            IsMotherboardEnabled = true,
+            IsControllerEnabled = true,
         };
         _computer.Open();
     }
@@ -116,7 +119,9 @@ public sealed class SensorReader : IDisposable
         type is HardwareType.Cpu
             or HardwareType.GpuNvidia
             or HardwareType.GpuAmd
-            or HardwareType.GpuIntel;
+            or HardwareType.GpuIntel
+            or HardwareType.Motherboard
+            or HardwareType.Cooler;
 
     public void Dispose() => _computer.Close();
 

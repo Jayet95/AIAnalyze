@@ -59,6 +59,38 @@
       { "t": 1795269594, "m": { "CPU °C": null, "CPU %": 34.9, "CPU W": null, "GPU °C": 73, "GPU %": 99, "GPU MHz": 2715 } }
     ]
   },
+  "/api/cooling": {
+    "atUtc": "2026-11-21T13:59:59+00:00",
+    "gpus": [
+      {
+        "name": "NVIDIA GeForce RTX 4070",
+        "fanCount": 2,
+        "fans": [
+          { "name": "GPU Fan 1", "rpm": 1480, "percent": 52 },
+          { "name": "GPU Fan 2", "rpm": 1495, "percent": 52 }
+        ],
+        "zeroRpm": false
+      }
+    ],
+    "systemFans": [
+      { "name": "CPU Fan", "rpm": 1100, "percent": 45 },
+      { "name": "Fan #2", "rpm": 860, "percent": 35 },
+      { "name": "Fan #3", "rpm": 875, "percent": 35 }
+    ],
+    "pumps": [
+      { "name": "AIO Pump", "rpm": 2700, "percent": 100 }
+    ],
+    "coolingType": "Liquid",
+    "coolingTypeReason": "A pump is running at 2700 RPM, so this PC uses liquid cooling (an AIO or a custom loop)."
+  },
+  "/api/cooling (laptop, no fan data)": {
+    "atUtc": "2026-11-21T13:59:59+00:00",
+    "gpus": [],
+    "systemFans": [],
+    "pumps": [],
+    "coolingType": "Unknown",
+    "coolingTypeReason": "This PC doesn't report its CPU or case fans. Laptops and some motherboards hide them, or the PawnIO driver is missing."
+  },
   "/api/sessions": [
     { "id": 14, "application": "Cyberpunk2077.exe", "startUtc": "2026-11-21T11:52:00+00:00", "endUtc": "2026-11-21T12:40:10+00:00", "durationSeconds": 2890, "frameCount": 251430, "medianFps": 87.0, "worst": "Warning" },
     { "id": 13, "application": "cs2.exe", "startUtc": "2026-11-20T19:05:00+00:00", "endUtc": "2026-11-20T20:10:30+00:00", "durationSeconds": 3930, "frameCount": 1102000, "medianFps": 281.0, "worst": "Info" },
