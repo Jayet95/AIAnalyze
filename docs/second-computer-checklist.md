@@ -1,5 +1,11 @@
 # Second computer: checklist
 
+## Round 13 additions (test these too)
+
+- **AIAnalyze window app:** after reinstalling, **AIAnalyze** in the Start menu opens its own window (not the browser), with an icon next to the clock. Closing the window keeps the icon; right-click it for Open, Check health now, Start with Windows, Quit. Trigger an alert (for example **Check now** with a known warning) and check that a Windows notification appears while the window is closed. If it fails, send `%LocalAppData%\AIAnalyze\desktop.log`.
+- **UI build:** the installer now uses bun if present, otherwise npm, retries once from a clean `node_modules`, and prints the real error. Send the output if it says `THE NEW UI WAS NOT INSTALLED`.
+- **Round 12 FurMark case:** browsers and launchers no longer become sessions. While FurMark runs, read `(Invoke-WebRequest -UseBasicParsing http://127.0.0.1:5280/api/status).Content` and send the `capture.applications` list: it shows which program PresentMon attributes FurMark's frames to.
+
 This round tests the current build: the new UI from Lovable, whole-PC health checks, cooling and RAM details, the opt-in sharing banner and feedback buttons. Sign-in is not set up yet (it waits for Clerk), so the account button opens Settings only.
 
 Commands run in PowerShell. Steps marked **Administrator** need an elevated window. Do not paste any API key into a chat or a file.
