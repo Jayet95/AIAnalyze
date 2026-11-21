@@ -28,7 +28,7 @@ public static class ChatEndpoints
 
         api.MapGet("/chat/status", (ClaudeChat chat) => Results.Ok(new { configured = chat.IsConfigured }));
 
-        api.MapPost("/chat", async (HttpContext http, ChatRequest request, ClaudeChat chat, CaptureStatus capture, ILogger<ClaudeChat> logger) =>
+        api.MapPost("/chat", async (HttpContext http, ChatRequest request, ClaudeChat chat, CaptureStatus capture, Health.HealthState health, ILogger<ClaudeChat> logger) =>
         {
             // Only the app's own page may spend the user's API credits. A JSON body already forces a CORS
             // preflight, which this server never approves; the origin check also covers same-machine pages.
@@ -51,7 +51,7 @@ public static class ChatEndpoints
             string briefing;
             using (var store = new SampleStore(TelemetryPaths.DatabasePath))
             {
-                briefing = DiagnosticContext.Build(store, capture, request.SessionId, DateTimeOffset.UtcNow);
+                briefing = DiagnosticContext.Build(store, capture, request.SessionId, DateTimeOffset.UtcNow, health.Latest);
             }
 
             http.Response.ContentType = "text/event-stream";

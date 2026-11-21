@@ -6,6 +6,16 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <UserSecretsId>dotnet-AIAnalyze-12a33555-39e4-4d59-b81d-6acb1f15dc32</UserSecretsId>
     <ApplicationManifest>app.manifest</ApplicationManifest>
+
+    <!-- File identity shown in Properties > Details and read by antivirus reputation checks. -->
+    <Product>AIAnalyze</Product>
+    <AssemblyTitle>AIAnalyze PC Diagnostics</AssemblyTitle>
+    <Description>Local PC diagnostics: checks system health, samples CPU and GPU sensors, records FPS, and explains problems.</Description>
+    <Company>AIAnalyze</Company>
+    <Copyright>Copyright © 2026 AIAnalyze</Copyright>
+    <Version>0.5.0</Version>
+    <FileVersion>0.5.0.0</FileVersion>
+    <AssemblyVersion>0.5.0.0</AssemblyVersion>
   </PropertyGroup>
 
   <ItemGroup>

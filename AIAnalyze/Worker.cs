@@ -5,7 +5,7 @@ namespace AIAnalyze;
 
 /// <summary>
 /// Samples CPU/GPU sensors once per second, stores them locally, and logs temperature warnings.
-/// Key sensors are stored every second and all sensors every few seconds (see <see cref="SampleSelection"/>).
+/// Only the sensors the app reads back are stored (see <see cref="SampleSelection"/>); old data is pruned hourly.
 /// </summary>
 public class Worker(ILogger<Worker> logger) : BackgroundService
 {
@@ -34,7 +34,6 @@ public class Worker(ILogger<Worker> logger) : BackgroundService
 
         var nextCleanup = DateTimeOffset.UtcNow;
         var lastLogged = new Dictionary<string, DateTimeOffset>();
-        long tick = 0;
         using var timer = new PeriodicTimer(SampleInterval);
 
         while (await timer.WaitForNextTickAsync(stoppingToken))
@@ -43,12 +42,12 @@ public class Worker(ILogger<Worker> logger) : BackgroundService
             {
                 var now = DateTimeOffset.UtcNow;
                 var samples = reader.ReadOnce();
-                store.WriteTick(now, SampleSelection.ForTick(samples, tick++));
+                store.WriteTick(now, SampleSelection.ToStore(samples));
                 LogThermalFindings(store, samples, now, lastLogged);
 
                 if (now >= nextCleanup)
                 {
-                    var removed = store.DeleteOlderThan(Retention);
+                    var removed = store.DeleteOlderThan(Retention) + store.PruneHistory(now);
                     // Fold the write-ahead log back into the database so it does not keep growing.
                     store.Checkpoint();
                     logger.LogDebug("Retention cleanup removed {Count} rows", removed);

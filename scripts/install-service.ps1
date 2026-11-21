@@ -26,7 +26,10 @@ param(
     [switch]$SetApiKey,
 
     # Delete the stored API key; the chat assistant is then turned off.
-    [switch]$RemoveApiKey
+    [switch]$RemoveApiKey,
+
+    # Skip the Microsoft Defender scan of the installed files.
+    [switch]$SkipScan
 )
 
 $ErrorActionPreference = "Stop"
@@ -63,6 +66,12 @@ if ($PresentMonPath) {
     Copy-Item $PresentMonPath $bundledPresentMon -Force
     Write-Host "Copied PresentMon to $bundledPresentMon"
 }
+# CPU temperature and power need the PawnIO driver (signed; used by LibreHardwareMonitor instead of the old
+# WinRing0 driver that antivirus flags). It is not bundled; LibreHardwareMonitor's installer adds it.
+if (-not (Get-Service -Name PawnIO -ErrorAction SilentlyContinue)) {
+    Write-Warning "The PawnIO driver is not installed, so CPU temperature and power will be blank. Install it from https://pawnio.eu (signed), then restart the AIAnalyze service."
+}
+
 if (-not (Test-Path $bundledPresentMon)) {
     Write-Warning "PresentMon is not installed, so FPS capture will be off. Rerun with -PresentMonPath <path to PresentMon.exe>."
 }
@@ -100,6 +109,26 @@ if ($SetApiKey) {
     @{ Claude = @{ ApiKey = $key } } | ConvertTo-Json | Set-Content -Path $secretsPath -Encoding ascii
     $key = $null
     Write-Host "Stored the API key in $secretsPath (readable only by SYSTEM and Administrators)."
+}
+
+# Scan the installed files with Microsoft Defender before starting the service, so a detection shows up here
+# instead of the service being blocked later. This never adds exclusions.
+if (-not $SkipScan -and (Get-Command Start-MpScan -ErrorAction SilentlyContinue)) {
+    Write-Host "Scanning $InstallDir with Microsoft Defender..."
+    try {
+        $scanStart = Get-Date
+        Start-MpScan -ScanType CustomScan -ScanPath $InstallDir
+        $hits = Get-MpThreatDetection -ErrorAction SilentlyContinue |
+            Where-Object { $_.InitialDetectionTime -ge $scanStart -and ($_.Resources -join ' ') -like "*$InstallDir*" }
+        if ($hits) {
+            Write-Warning "Microsoft Defender flagged files in $InstallDir. Do not add an exclusion; report it on the project page with this output:"
+            $hits | Format-List ThreatID, Resources, InitialDetectionTime | Out-String | Write-Host
+        } else {
+            Write-Host "Microsoft Defender found nothing in $InstallDir."
+        }
+    } catch {
+        Write-Warning "The Defender scan could not run ($($_.Exception.Message)). If another antivirus is installed, it scans the files instead."
+    }
 }
 
 $exe = Join-Path $InstallDir "AIAnalyze.exe"

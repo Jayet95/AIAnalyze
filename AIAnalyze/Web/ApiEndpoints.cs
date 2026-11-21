@@ -41,6 +41,19 @@ public static class ApiEndpoints
             });
         });
 
+        api.MapGet("/health", (Health.HealthState state) =>
+            Results.Json(new { report = state.Latest, running = state.Running }, Health.HealthJson.Options));
+
+        api.MapPost("/health/run", (HttpRequest request, Health.HealthState state) =>
+        {
+            if (!ChatEndpoints.IsAllowedOrigin(request))
+            {
+                return Results.StatusCode(StatusCodes.Status403Forbidden);
+            }
+            state.RequestRun();
+            return Results.Accepted();
+        });
+
         api.MapGet("/specs", () =>
         {
             using var store = Open();

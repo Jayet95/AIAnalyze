@@ -23,6 +23,22 @@ if (args.Contains("--dump-sensors"))
     return;
 }
 
+if (args.Contains("--health"))
+{
+    // Runs the PC health checks once and prints the report. Read-only.
+    var snapshot = await AIAnalyze.Health.HealthCollector.CollectAsync(TimeSpan.FromSeconds(3), CancellationToken.None);
+    var report = AIAnalyze.Health.HealthAnalyzer.Analyze(snapshot);
+    foreach (var check in report.Checks)
+    {
+        Console.WriteLine($"[{check.Severity?.ToString() ?? "OK"}] {check.Title}: {check.Summary}");
+        foreach (var line in check.Evidence)
+        {
+            Console.WriteLine($"    - {line}");
+        }
+    }
+    return;
+}
+
 if (args.Contains("--seed-demo"))
 {
     // Development only: writes a synthetic session. Point AIANALYZE_DATA_DIR at a scratch folder first.
@@ -131,6 +147,8 @@ var claudeOptions = builder.Configuration.GetSection("Claude").Get<AIAnalyze.Cha
 builder.Services.AddSingleton(new AIAnalyze.Chat.ClaudeChat(claudeOptions));
 builder.Services.AddHostedService<Worker>();
 builder.Services.AddHostedService<FpsMonitorService>();
+builder.Services.AddSingleton<AIAnalyze.Health.HealthState>();
+builder.Services.AddHostedService<AIAnalyze.Health.HealthMonitorService>();
 
 var app = builder.Build();
 app.UseDefaultFiles();

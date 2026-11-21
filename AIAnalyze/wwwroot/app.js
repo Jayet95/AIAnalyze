@@ -351,6 +351,110 @@ function humanKind(kind) {
   }[kind] ?? kind;
 }
 
+// ---------------------------------------------------------------- health
+
+const SEVERITY_RANK = { Info: 1, Warning: 2, Critical: 3 };
+let healthAt = null;
+let healthPoll = null;
+
+function healthIcon(worst) {
+  const ok = '<svg viewBox="0 0 24 24" width="28" height="28"><path d="M5 12.5l4.5 4.5L19 7.5" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+  const warn = '<svg viewBox="0 0 24 24" width="28" height="28"><path d="M12 4l9 16H3L12 4z M12 10v4 M12 17.5v.5" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+  const span = el("div", { class: `health-badge ${worst ?? ""}` });
+  span.innerHTML = worst === "Warning" || worst === "Critical" ? warn : ok;
+  return span;
+}
+
+function headline(report) {
+  const problems = report.checks.filter((c) => c.severity === "Warning" || c.severity === "Critical");
+  const critical = problems.filter((c) => c.severity === "Critical");
+  if (critical.length) return `${critical.length} serious problem${critical.length > 1 ? "s" : ""} need attention`;
+  if (problems.length) return `${problems.length} thing${problems.length > 1 ? "s" : ""} to look at`;
+  return "Your PC looks healthy";
+}
+
+function procList(container, items, value, max, unit) {
+  if (!items.length) {
+    container.replaceChildren(el("div", { class: "muted" }, "Not available."));
+    return;
+  }
+  container.replaceChildren(...items.slice(0, 6).map((p) =>
+    el("div", { class: "proc" },
+      el("span", { class: "name", title: p.name }, p.name),
+      el("span", { class: "val" }, `${fmt.num(value(p), 0)} ${unit}`),
+      el("div", { class: "meter" }, el("span", { style: `width:${Math.min(100, (value(p) / max) * 100)}%` })))));
+}
+
+async function refreshHealth() {
+  let data;
+  try {
+    data = await getJson("/api/health");
+  } catch {
+    return;
+  }
+  const overview = $("#health-overview");
+  const report = data.report;
+  if (!report) {
+    overview.replaceChildren(el("div", { class: "empty" }, "Running the first health check… this takes under a minute after the service starts."));
+    return;
+  }
+  const changed = healthAt !== report.atUtc;
+  healthAt = report.atUtc;
+
+  const checkNow = el("button", { class: "primary-btn", onclick: runHealthNow }, data.running ? "Checking…" : "Check now");
+  if (data.running) checkNow.disabled = true;
+  overview.replaceChildren(
+    healthIcon(report.worst),
+    el("div", { class: "grow" },
+      el("div", { class: "health-headline" }, headline(report)),
+      el("div", { class: "muted" }, `Checked ${fmt.ago(report.atUtc)} · ${report.checks.length} checks · runs every 10 minutes`)),
+    el("button", { class: "text-btn", onclick: () => openChat({ question: "Look at my PC's health checks. Is anything wrong, and what should I do first?", sessionId: null }) }, "Ask AI about it"),
+    checkNow);
+
+  if (!changed && $("#health-checks").childElementCount) return;
+
+  const sorted = [...report.checks].sort((a, b) => (SEVERITY_RANK[b.severity] ?? 0) - (SEVERITY_RANK[a.severity] ?? 0));
+  const problems = sorted.filter((c) => c.severity === "Warning" || c.severity === "Critical").length;
+  $("#health-count").textContent = problems ? `${problems} need attention` : "all passed";
+  $("#health-checks").replaceChildren(...sorted.map((c) => {
+    const problem = c.severity === "Warning" || c.severity === "Critical";
+    const row = el("div", { class: `check ${problem ? "problem" : ""}` },
+      el("span", { class: `dot ${c.severity ?? ""}` }),
+      el("div", {},
+        el("div", { class: "check-title" }, c.title),
+        el("div", { class: "check-summary" }, c.summary)),
+      problem || c.severity === "Info"
+        ? el("button", { class: "text-btn", onclick: () => openChat({ question: `About "${c.title}": ${c.summary} What does this mean for me, and what should I do?`, sessionId: null }) }, "Ask about this")
+        : el("span"));
+    if (c.evidence.length) {
+      const details = el("details", { class: "check-evidence" }, el("summary", {}, problem ? "Details" : "What was checked"),
+        el("ul", {}, c.evidence.map((e) => el("li", { dir: "auto" }, e))));
+      if (problem) details.open = true;
+      row.append(details);
+    }
+    return row;
+  }));
+
+  procList($("#health-cpu"), report.topByCpu, (p) => p.cpuPercent, 100, "%");
+  procList($("#health-memory"), report.topByMemory, (p) => p.memoryMb, Math.max(1, ...report.topByMemory.map((p) => p.memoryMb)), "MB");
+}
+
+async function runHealthNow() {
+  try {
+    await fetch("/api/health/run", { method: "POST" });
+  } catch {
+    return;
+  }
+  const started = healthAt;
+  clearInterval(healthPoll);
+  let tries = 0;
+  healthPoll = setInterval(async () => {
+    await refreshHealth();
+    if (healthAt !== started || ++tries > 30) clearInterval(healthPoll);
+  }, 2000);
+  refreshHealth();
+}
+
 // ---------------------------------------------------------------- system
 
 async function refreshSpecs() {
@@ -376,12 +480,13 @@ async function refreshSpecs() {
 
 // ---------------------------------------------------------------- tabs and timers
 
-let activeTab = "live";
+let activeTab = "health";
 
 function showTab(name) {
   activeTab = name;
   document.querySelectorAll(".tab").forEach((t) => t.classList.toggle("active", t.dataset.tab === name));
   document.querySelectorAll(".tab-panel").forEach((p) => p.classList.toggle("active", p.id === `tab-${name}`));
+  if (name === "health") refreshHealth();
   if (name === "live") refreshLive();
   if (name === "sessions") refreshSessions();
   if (name === "system") refreshSpecs();
@@ -401,9 +506,10 @@ const chat = {
 
 const SUGGESTIONS = [
   "Is anything wrong with my PC right now?",
-  "Why did my FPS drop in the last session?",
+  "Why is my PC slow?",
+  "Has my PC crashed recently, and why?",
   "Are my temperatures OK?",
-  "What limits my FPS, the CPU or the GPU?",
+  "Why did my FPS drop in the last game?",
 ];
 
 function saveChat() {
@@ -642,7 +748,8 @@ refreshAlerts();
 setInterval(() => { if (!document.hidden) refreshAlerts(); }, 10000);
 
 refreshStatus();
-refreshLive();
+showTab("health");
 setInterval(refreshStatus, 5000);
+setInterval(() => { if (activeTab === "health" && !document.hidden) refreshHealth(); }, 30000);
 setInterval(() => { if (activeTab === "live" && !document.hidden) refreshLive(); }, 2000);
 setInterval(() => { if (activeTab === "sessions" && !document.hidden) refreshSessions(); }, 30000);

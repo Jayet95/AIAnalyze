@@ -17,13 +17,19 @@ public static class DiagnosticContext
     private const int RecentSessions = 8;
     private const int RecentAlerts = 10;
 
-    public static string Build(SampleStore store, CaptureStatus? capture, long? focusSessionId, DateTimeOffset now)
+    public static string Build(
+        SampleStore store,
+        CaptureStatus? capture,
+        long? focusSessionId,
+        DateTimeOffset now,
+        Health.HealthReport? health = null)
     {
         var sb = new StringBuilder();
         sb.AppendLine($"Current local time: {Local(now)}.");
         sb.AppendLine();
 
         AppendSpecs(sb, store);
+        AppendHealth(sb, health ?? store.GetLatestHealthReport());
         AppendNow(sb, store, capture);
         AppendAlerts(sb, store);
         AppendSessions(sb, store);
@@ -55,6 +61,39 @@ public static class DiagnosticContext
         }
         sb.AppendLine($"- Motherboard: {s.MotherboardManufacturer} {s.MotherboardProduct}, BIOS {s.BiosVersion}");
         sb.AppendLine($"- Windows: {s.OsName}, build {s.OsBuild}");
+        sb.AppendLine();
+    }
+
+    private static void AppendHealth(StringBuilder sb, Health.HealthReport? report)
+    {
+        if (report is null)
+        {
+            sb.AppendLine("## System health");
+            sb.AppendLine("Not checked yet.");
+            sb.AppendLine();
+            return;
+        }
+
+        sb.AppendLine($"## System health (checked {Local(report.AtUtc)}; Event Log covers the last 7 days)");
+        foreach (var check in report.Checks.OrderByDescending(c => c.Severity ?? (FindingSeverity)(-1)))
+        {
+            sb.AppendLine($"- [{check.Severity?.ToString() ?? "OK"}] {check.Title}: {check.Summary}");
+            foreach (var line in check.Evidence.Take(5))
+            {
+                sb.AppendLine($"  - {line}");
+            }
+        }
+        sb.AppendLine($"- Uptime: {report.Uptime.TotalDays:0.#} days");
+        if (report.TopByCpu.Count > 0)
+        {
+            sb.AppendLine("- Busiest programs by CPU (share of the whole CPU): " +
+                string.Join(", ", report.TopByCpu.Take(5).Select(p => $"{p.Name} {p.CpuPercent:0}%")));
+        }
+        if (report.TopByMemory.Count > 0)
+        {
+            sb.AppendLine("- Biggest programs by memory: " +
+                string.Join(", ", report.TopByMemory.Take(5).Select(p => $"{p.Name} {p.MemoryMb:0} MB")));
+        }
         sb.AppendLine();
     }
 

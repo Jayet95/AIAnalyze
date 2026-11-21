@@ -3,19 +3,17 @@ using AIAnalyze.Analysis;
 namespace AIAnalyze.Sensors;
 
 /// <summary>
-/// Decides which sensors are stored on each tick. Storing every sensor every second wrote about
-/// 136 rows per second (1.4 GB per day). Temperatures and the sensors the timeline and findings use
-/// are stored every second; every sensor is stored every <see cref="FullEvery"/> seconds.
+/// Decides which sensor readings are stored. Only the sensors the timeline, findings, live view and
+/// assistant read are kept (CPU temperature, load and power; GPU temperature, load, clock and memory size).
+/// Hundreds of other readings (per-core clocks, voltages) are used live for temperature warnings but never
+/// read back, so they are not written. Storing everything wrote about 136 rows per second (1.4 GB per day).
 /// </summary>
 public static class SampleSelection
 {
-    public const int FullEvery = 10;
-
     private static readonly HashSet<string> KeyNames = new(SessionTimeline.SensorNames, StringComparer.Ordinal);
 
-    public static bool IsKey(SensorSample sample) =>
-        sample.SensorType == "Temperature" || KeyNames.Contains(sample.SensorName);
+    public static bool IsKept(SensorSample sample) => KeyNames.Contains(sample.SensorName);
 
-    public static IReadOnlyList<SensorSample> ForTick(IReadOnlyList<SensorSample> samples, long tick) =>
-        tick % FullEvery == 0 ? samples : samples.Where(IsKey).ToList();
+    public static IReadOnlyList<SensorSample> ToStore(IReadOnlyList<SensorSample> samples) =>
+        samples.Where(IsKept).ToList();
 }

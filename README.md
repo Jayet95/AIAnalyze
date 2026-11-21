@@ -1,16 +1,23 @@
 # AIAnalyze
 
-A local Windows agent that watches your PC while you play and explains what it sees. It samples CPU and GPU sensors every second, records FPS per game with PresentMon, and turns each gaming session into plain-language findings, for example:
+A local Windows agent that watches your PC's health and explains problems in plain words: what is wrong, why, and what to do. It checks the whole PC every 10 minutes, watches CPU and GPU sensors, records FPS in games, and has an assistant you can ask about any of it.
 
-- "The GPU was 98% busy, so the graphics card set the frame rate. Lower resolution or upscaling will raise FPS; a faster CPU will not."
-- "While the GPU was fully loaded, its clock dropped from 2743 to 2234 MHz at up to 86 °C. That pattern is thermal throttling."
-- "FPS stayed at about 144, which matches a frame cap: V-Sync, an in-game limiter, or the monitor's refresh rate."
+What it checks:
+
+- **Stability:** blue screens and unexpected shutdowns, hardware errors (WHEA), graphics driver resets, programs that keep crashing or hanging, failing Windows services, failed Windows updates (with the meaning of the error code).
+- **Storage and memory:** free disk space, drive health as Windows reports it, memory pressure and the programs using the most memory.
+- **Load and upkeep:** programs eating the CPU, days since the last restart, laptop battery wear.
+- **Temperatures:** CPU and GPU against safe limits, live.
+- **Games:** FPS per game against your usual FPS, with findings such as "The GPU was 98% busy, so the graphics card set the frame rate" or "Its clock dropped from 2743 to 2234 MHz at up to 86 °C: thermal throttling".
 
 Everything stays on the PC. The UI is a local web page served by the service on `127.0.0.1`, so nothing is reachable from the network.
 
 ## Install
 
-You need the .NET 10 SDK to build, and PresentMon for FPS capture. Download `PresentMon.exe` from the official PresentMon GitHub releases.
+You need the .NET 10 SDK to build. Optional, for full data:
+
+- **PresentMon** for FPS capture: download `PresentMon.exe` from the official PresentMon GitHub releases.
+- **PawnIO** driver for CPU temperature and power: install it from <https://pawnio.eu> (signed; the LibreHardwareMonitor installer also adds it). The sensor library uses PawnIO, not the old WinRing0 driver that antivirus software flags. The installer warns if it is missing.
 
 In an elevated PowerShell (Run as administrator), from the repo root:
 
@@ -18,7 +25,7 @@ In an elevated PowerShell (Run as administrator), from the repo root:
 powershell -ExecutionPolicy Bypass -File scripts\install-service.ps1 -PresentMonPath C:\Path\To\PresentMon.exe
 ```
 
-The script builds the app, installs it as an automatic Windows service, copies PresentMon next to it, adds an **AIAnalyze** shortcut to the Start menu, and opens the UI. `-PresentMonPath` is only needed the first time; reinstalls keep the copied PresentMon.
+The script builds the app, scans the installed files with Microsoft Defender (it never adds exclusions), installs it as an automatic Windows service, copies PresentMon next to it, adds an **AIAnalyze** shortcut to the Start menu, and opens the UI. `-PresentMonPath` is only needed the first time; reinstalls keep the copied PresentMon.
 
 Uninstall (collected data is kept):
 
@@ -30,6 +37,7 @@ powershell -ExecutionPolicy Bypass -File scripts\uninstall-service.ps1
 
 Open **AIAnalyze** from the Start menu, or go to <http://127.0.0.1:5280/>.
 
+- **Health** (opens first): an overall verdict, each check in green, yellow or red with its evidence, **Check now**, and the programs using the most CPU and memory.
 - **Live**: CPU and GPU temperature, load, power and clock, with the last 5 minutes as charts, plus the state of FPS capture.
 - **Sessions**: every game session with its findings, the assistant's feedback, median FPS against your usual FPS for that game, and per-second charts of FPS, temperatures, load and GPU clock.
 - **System**: the PC's model, CPU, RAM, GPUs with driver versions, motherboard, BIOS and Windows version.
@@ -73,6 +81,23 @@ Assistant settings, all optional, in `C:\ProgramData\AIAnalyze\appsettings.json`
 
 On a PC with an integrated and a discrete GPU, the timeline and findings use the GPU that did the work: the one with the highest median load, or the one with more memory when both are idle.
 
+## Footprint and what is stored
+
+Measured on a 20-thread laptop: about 0.6% of one CPU core on average (including the health check every 10 minutes) and about 155 MB of memory.
+
+Only data the app reads back is stored, and everything has a limit:
+
+| Data | Kept for |
+|---|---|
+| Sensor readings, only the ones the app uses (CPU and GPU temperature, load, power, GPU clock), once a second | 2 days |
+| Health reports | 1 day (only the latest is shown) |
+| Alerts | 30 days |
+| Per-second FPS of each session | 30 days |
+| Sessions (median FPS, findings, assistant feedback) | kept, for the per-game baseline |
+| Hardware and driver snapshot | only when something changes |
+
+Event Log entries are read for the checks but not copied into the database. Nothing leaves the PC except questions you send to the assistant, together with the briefing described above.
+
 ## Where things are
 
 - Installed files: `C:\Program Files\AIAnalyze` (PresentMon in its `PresentMon` subfolder)
@@ -101,7 +126,10 @@ Run these against the installed app:
 dotnet "C:\Program Files\AIAnalyze\AIAnalyze.dll" --sessions
 dotnet "C:\Program Files\AIAnalyze\AIAnalyze.dll" --timeline <id>
 dotnet "C:\Program Files\AIAnalyze\AIAnalyze.dll" --dump-sensors
+dotnet "C:\Program Files\AIAnalyze\AIAnalyze.dll" --health
 ```
+
+`--health` runs the health checks once and prints them.
 
 `--timeline` prints the findings, then one row per second with FPS next to CPU and GPU readings.
 
@@ -112,6 +140,9 @@ dotnet "C:\Program Files\AIAnalyze\AIAnalyze.dll" --dump-sensors
 - **Event Log entries**: `Get-WinEvent -FilterHashtable @{LogName='Application'; ProviderName='AIAnalyze'} -MaxEvents 40 | Format-List TimeCreated, Message`
 
 ## Development
+
+A brief for building a new UI (for example in Lovable), with the full API contract and sample data, is in [docs/ui-brief-for-lovable.md](docs/ui-brief-for-lovable.md).
+
 
 ```powershell
 dotnet test tests\AIAnalyze.Tests\AIAnalyze.Tests.csproj

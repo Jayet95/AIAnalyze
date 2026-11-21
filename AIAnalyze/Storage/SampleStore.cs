@@ -70,6 +70,11 @@ public sealed class SampleStore : IDisposable
                 created_utc INTEGER NOT NULL,  -- Unix milliseconds
                 text        TEXT    NOT NULL
             );
+            CREATE TABLE IF NOT EXISTS health_reports (
+                id          INTEGER PRIMARY KEY,
+                ts_utc      INTEGER NOT NULL,  -- Unix milliseconds
+                report_json TEXT    NOT NULL
+            );
             CREATE TABLE IF NOT EXISTS alerts (
                 id         INTEGER PRIMARY KEY,
                 ts_utc     INTEGER NOT NULL,  -- Unix milliseconds
@@ -80,6 +85,31 @@ public sealed class SampleStore : IDisposable
             );
             """;
         create.ExecuteNonQuery();
+    }
+
+    /// <summary>Stores a health report and drops reports older than 7 days.</summary>
+    public void SaveHealthReport(Health.HealthReport report)
+    {
+        using var cmd = _connection.CreateCommand();
+        cmd.CommandText = """
+            INSERT INTO health_reports (ts_utc, report_json) VALUES ($ts, $json);
+            DELETE FROM health_reports WHERE ts_utc < $cutoff;
+            """;
+        cmd.Parameters.AddWithValue("$ts", report.AtUtc.ToUnixTimeMilliseconds());
+        cmd.Parameters.AddWithValue("$json", System.Text.Json.JsonSerializer.Serialize(report, Health.HealthJson.Options));
+        // Only the latest report is read; a day of history is enough to compare runs.
+        cmd.Parameters.AddWithValue("$cutoff", report.AtUtc.AddDays(-1).ToUnixTimeMilliseconds());
+        cmd.ExecuteNonQuery();
+    }
+
+    /// <summary>The newest health report, or null before the first check.</summary>
+    public Health.HealthReport? GetLatestHealthReport()
+    {
+        using var cmd = _connection.CreateCommand();
+        cmd.CommandText = "SELECT report_json FROM health_reports ORDER BY id DESC LIMIT 1;";
+        return cmd.ExecuteScalar() is string json
+            ? System.Text.Json.JsonSerializer.Deserialize<Health.HealthReport>(json, Health.HealthJson.Options)
+            : null;
     }
 
     /// <summary>Stores (or replaces) the assistant's feedback on a session.</summary>
@@ -514,6 +544,25 @@ public sealed class SampleStore : IDisposable
         var cutoff = DateTimeOffset.UtcNow.Subtract(retention).ToUnixTimeMilliseconds();
         using var cmd = _connection.CreateCommand();
         cmd.CommandText = "DELETE FROM samples WHERE ts_utc < $cutoff;";
+        cmd.Parameters.AddWithValue("$cutoff", cutoff);
+        return cmd.ExecuteNonQuery();
+    }
+
+    /// <summary>How long alerts and per-second FPS are kept. Sessions and their findings are kept for the baseline.</summary>
+    public static readonly TimeSpan HistoryRetention = TimeSpan.FromDays(30);
+
+    /// <summary>
+    /// Deletes alerts and per-second FPS older than <see cref="HistoryRetention"/>. Session rows (median FPS,
+    /// findings, feedback) stay: they are small and the per-game baseline needs them. Returns rows deleted.
+    /// </summary>
+    public int PruneHistory(DateTimeOffset now)
+    {
+        var cutoff = now.Subtract(HistoryRetention).ToUnixTimeMilliseconds();
+        using var cmd = _connection.CreateCommand();
+        cmd.CommandText = """
+            DELETE FROM alerts WHERE ts_utc < $cutoff;
+            DELETE FROM fps_seconds WHERE session_id IN (SELECT id FROM sessions WHERE start_utc < $cutoff);
+            """;
         cmd.Parameters.AddWithValue("$cutoff", cutoff);
         return cmd.ExecuteNonQuery();
     }

@@ -18,7 +18,8 @@
       </div>
     </div>
     <nav class="tabs" role="tablist">
-      <button class="tab active" data-tab="live" role="tab">Live</button>
+      <button class="tab active" data-tab="health" role="tab">Health</button>
+      <button class="tab" data-tab="live" role="tab">Live</button>
       <button class="tab" data-tab="sessions" role="tab">Sessions</button>
       <button class="tab" data-tab="system" role="tab">System</button>
     </nav>
@@ -38,7 +39,27 @@
   </header>
 
   <main>
-    <section id="tab-live" class="tab-panel active">
+    <section id="tab-health" class="tab-panel active">
+      <div class="panel health-overview" id="health-overview">
+        <div class="empty">Running the first health check…</div>
+      </div>
+      <div class="panel">
+        <div class="panel-head"><h2>Checks</h2><span class="muted" id="health-count"></span></div>
+        <div id="health-checks" class="health-checks"></div>
+      </div>
+      <div class="grid2">
+        <div class="panel">
+          <div class="panel-head"><h2>Programs using the CPU</h2><span class="muted">share of the whole CPU</span></div>
+          <div id="health-cpu" class="proc-list"></div>
+        </div>
+        <div class="panel">
+          <div class="panel-head"><h2>Programs using memory</h2></div>
+          <div id="health-memory" class="proc-list"></div>
+        </div>
+      </div>
+    </section>
+
+    <section id="tab-live" class="tab-panel">
       <div id="capture-banner" class="banner hidden"></div>
       <div class="cards" id="live-cards"></div>
       <div class="grid2">

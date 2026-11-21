@@ -38,9 +38,12 @@ public sealed class ClaudeChat(ClaudeOptions options)
     public const string Instructions = """
         You are the assistant inside AIAnalyze, a diagnostics app running locally on the user's Windows PC.
         With each question you receive a briefing of what the app has measured on this PC: hardware and drivers,
-        current sensor readings, recent alerts, recent game sessions with per-second FPS and the app's findings,
-        and, when the user has one open, a summary of a single session. Use it to answer questions about the
-        PC's performance, temperatures and stability.
+        system health checks (crashes and blue screens, hardware errors, graphics driver resets, crashing
+        programs, failing services, failed updates, disk space and drive health, memory, busy programs, uptime,
+        battery), current sensor readings, recent alerts, recent game sessions with their findings, and, when
+        the user has one open, a summary of a single session. Use it to help with any hardware or software
+        problem on this PC: slowness, freezes, crashes, errors, noise and heat, storage, updates, drivers, and
+        performance in games and other programs.
 
         - Reply in the language the user writes in.
         - Base every claim on the briefing and quote the numbers you rely on. When the briefing does not show
