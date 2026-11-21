@@ -72,6 +72,16 @@ Assistant settings, all optional, in `C:\ProgramData\AIAnalyze\appsettings.json`
 }
 ```
 
+## Accounts and data sharing
+
+Signing in is optional. Without an account everything above works locally; with one, the assistant works without your own API key (free during the beta, with a daily limit).
+
+- **Sign in** in the top bar opens your browser at the sign-in page and brings you back to the app. The app never sees your password; it stores a sign-in token in a file only SYSTEM and Administrators can read.
+- **Data sharing is off until you turn it on.** The first time, the Health tab asks once. Settings shows exactly what would be sent: hardware models, driver versions, Windows build, which checks failed, which finding types appeared, game file names and FPS, and your Helpful / Not helpful votes. Never names of your files, folders or other programs, never Event Log text, never chat content. It is tied to a random ID for this install, and to your account only when signed in.
+- Helpful / Not helpful votes are kept on this PC and uploaded only when sharing is on.
+
+Setting up the server (Clerk and Cloudflare) is described in [server/README.md](server/README.md).
+
 ## How capture works
 
 - The service runs as LocalSystem. Sensor sampling needs administrator rights for full CPU telemetry.

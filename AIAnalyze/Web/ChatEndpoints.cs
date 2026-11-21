@@ -26,19 +26,24 @@ public static class ChatEndpoints
             return Results.Ok(store.GetAlerts(after ?? 0, 50));
         });
 
-        api.MapGet("/chat/status", (ClaudeChat chat) => Results.Ok(new { configured = chat.IsConfigured }));
-
-        api.MapPost("/chat", async (HttpContext http, ChatRequest request, ClaudeChat chat, CaptureStatus capture, Health.HealthState health, ILogger<ClaudeChat> logger) =>
+        api.MapGet("/chat/status", (ChatRouter chat, Account.AccountService account) => Results.Ok(new
         {
-            // Only the app's own page may spend the user's API credits. A JSON body already forces a CORS
+            configured = chat.IsAvailable,
+            mode = chat.Mode.ToString(),
+            signInAvailable = account.Status.SignInConfigured,
+        }));
+
+        api.MapPost("/chat", async (HttpContext http, ChatRequest request, ChatRouter chat, CaptureStatus capture, Health.HealthState health, ILogger<ClaudeChat> logger) =>
+        {
+            // Only the app's own page may spend the user's quota or API credits. A JSON body already forces a CORS
             // preflight, which this server never approves; the origin check also covers same-machine pages.
             if (!IsAllowedOrigin(http.Request))
             {
                 return Results.StatusCode(StatusCodes.Status403Forbidden);
             }
-            if (!chat.IsConfigured)
+            if (!chat.IsAvailable)
             {
-                return Results.Json(new { error = "The assistant is not set up: no Anthropic API key. See the README, section Chat." },
+                return Results.Json(new { error = "The assistant is off. Sign in to use it, or add your own Anthropic API key." },
                     statusCode: StatusCodes.Status503ServiceUnavailable);
             }
 
@@ -125,6 +130,7 @@ public static class ChatEndpoints
 
     private static string FriendlyError(Exception ex) => ex switch
     {
+        ChatServiceException service => service.Message,
         Anthropic.Exceptions.AnthropicRateLimitException => "Too many questions in a short time. Try again in a minute.",
         Anthropic.Exceptions.AnthropicUnauthorizedException => "The Anthropic API key was rejected. Check the key in the installer or ANTHROPIC_API_KEY.",
         HttpRequestException => "Could not reach the Anthropic API. Check the internet connection.",

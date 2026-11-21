@@ -144,7 +144,26 @@ builder.WebHost.UseUrls($"http://127.0.0.1:{port}");
 builder.Services.Configure<PresentMonOptions>(builder.Configuration.GetSection("PresentMon"));
 builder.Services.AddSingleton<CaptureStatus>();
 var claudeOptions = builder.Configuration.GetSection("Claude").Get<AIAnalyze.Chat.ClaudeOptions>() ?? new();
+builder.Services.AddSingleton(claudeOptions);
 builder.Services.AddSingleton(new AIAnalyze.Chat.ClaudeChat(claudeOptions));
+
+// Accounts and the AIAnalyze server (sign-in with any OpenID Connect provider, such as Clerk).
+var cloudOptions = builder.Configuration.GetSection("Cloud").Get<AIAnalyze.Account.CloudOptions>() ?? new();
+builder.Services.AddSingleton(cloudOptions);
+builder.Services.AddHttpClient("cloud", c => c.Timeout = TimeSpan.FromSeconds(30));
+builder.Services.AddHttpClient("cloud-stream", c => c.Timeout = Timeout.InfiniteTimeSpan);
+builder.Services.AddSingleton(sp => new AIAnalyze.Account.OidcClient(
+    sp.GetRequiredService<IHttpClientFactory>().CreateClient("cloud"), cloudOptions));
+builder.Services.AddSingleton(new AIAnalyze.Account.AccountStore(
+    Path.Combine(TelemetryPaths.DataDirectory, "account.json"),
+    lockDown: Microsoft.Extensions.Hosting.WindowsServices.WindowsServiceHelpers.IsWindowsService()));
+builder.Services.AddSingleton<AIAnalyze.Account.AccountService>();
+builder.Services.AddSingleton(sp => new AIAnalyze.Chat.CloudChat(
+    sp.GetRequiredService<IHttpClientFactory>().CreateClient("cloud-stream"), cloudOptions,
+    sp.GetRequiredService<AIAnalyze.Account.AccountService>()));
+builder.Services.AddSingleton<AIAnalyze.Chat.ChatRouter>();
+builder.Services.AddSingleton<AIAnalyze.Telemetry.PrivacySettings>();
+builder.Services.AddHostedService<AIAnalyze.Telemetry.TelemetryService>();
 builder.Services.AddHostedService<Worker>();
 builder.Services.AddHostedService<FpsMonitorService>();
 builder.Services.AddSingleton<AIAnalyze.Health.HealthState>();
@@ -155,4 +174,6 @@ app.UseDefaultFiles();
 app.UseStaticFiles();
 app.MapApi();
 app.MapChat();
+app.MapAccount();
+app.MapPrivacy();
 app.Run();

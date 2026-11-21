@@ -70,6 +70,17 @@ public sealed class SampleStore : IDisposable
                 created_utc INTEGER NOT NULL,  -- Unix milliseconds
                 text        TEXT    NOT NULL
             );
+            CREATE TABLE IF NOT EXISTS settings (
+                key   TEXT PRIMARY KEY,
+                value TEXT NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS outbox (
+                id          INTEGER PRIMARY KEY,
+                created_utc INTEGER NOT NULL,  -- Unix milliseconds
+                kind        TEXT    NOT NULL,  -- feedback
+                payload     TEXT    NOT NULL,  -- JSON
+                sent_utc    INTEGER            -- NULL until uploaded
+            );
             CREATE TABLE IF NOT EXISTS health_reports (
                 id          INTEGER PRIMARY KEY,
                 ts_utc      INTEGER NOT NULL,  -- Unix milliseconds
@@ -85,6 +96,70 @@ public sealed class SampleStore : IDisposable
             );
             """;
         create.ExecuteNonQuery();
+    }
+
+    public string? GetSetting(string key)
+    {
+        using var cmd = _connection.CreateCommand();
+        cmd.CommandText = "SELECT value FROM settings WHERE key = $key;";
+        cmd.Parameters.AddWithValue("$key", key);
+        return cmd.ExecuteScalar() as string;
+    }
+
+    public void SetSetting(string key, string value)
+    {
+        using var cmd = _connection.CreateCommand();
+        cmd.CommandText = "INSERT INTO settings (key, value) VALUES ($key, $value) ON CONFLICT(key) DO UPDATE SET value = excluded.value;";
+        cmd.Parameters.AddWithValue("$key", key);
+        cmd.Parameters.AddWithValue("$value", value);
+        cmd.ExecuteNonQuery();
+    }
+
+    /// <summary>Queues something to upload later (only sent when the user agreed to share).</summary>
+    public long AddToOutbox(string kind, string payloadJson, DateTimeOffset at)
+    {
+        using var cmd = _connection.CreateCommand();
+        cmd.CommandText = """
+            INSERT INTO outbox (created_utc, kind, payload) VALUES ($ts, $kind, $payload);
+            SELECT last_insert_rowid();
+            """;
+        cmd.Parameters.AddWithValue("$ts", at.ToUnixTimeMilliseconds());
+        cmd.Parameters.AddWithValue("$kind", kind);
+        cmd.Parameters.AddWithValue("$payload", payloadJson);
+        return (long)cmd.ExecuteScalar()!;
+    }
+
+    /// <summary>Queued items not yet uploaded, oldest first.</summary>
+    public IReadOnlyList<(long Id, string Payload)> GetPendingOutbox(string kind, int limit)
+    {
+        using var cmd = _connection.CreateCommand();
+        cmd.CommandText = "SELECT id, payload FROM outbox WHERE kind = $kind AND sent_utc IS NULL ORDER BY id LIMIT $limit;";
+        cmd.Parameters.AddWithValue("$kind", kind);
+        cmd.Parameters.AddWithValue("$limit", limit);
+        var rows = new List<(long, string)>();
+        using var reader = cmd.ExecuteReader();
+        while (reader.Read())
+        {
+            rows.Add((reader.GetInt64(0), reader.GetString(1)));
+        }
+        return rows;
+    }
+
+    public void MarkOutboxSent(IEnumerable<long> ids, DateTimeOffset at)
+    {
+        using var transaction = _connection.BeginTransaction();
+        using var cmd = _connection.CreateCommand();
+        cmd.Transaction = transaction;
+        cmd.CommandText = "UPDATE outbox SET sent_utc = $ts WHERE id = $id;";
+        var ts = cmd.Parameters.Add("$ts", SqliteType.Integer);
+        var id = cmd.Parameters.Add("$id", SqliteType.Integer);
+        ts.Value = at.ToUnixTimeMilliseconds();
+        foreach (var value in ids)
+        {
+            id.Value = value;
+            cmd.ExecuteNonQuery();
+        }
+        transaction.Commit();
     }
 
     /// <summary>Stores a health report and drops reports older than 7 days.</summary>
@@ -562,6 +637,7 @@ public sealed class SampleStore : IDisposable
         cmd.CommandText = """
             DELETE FROM alerts WHERE ts_utc < $cutoff;
             DELETE FROM fps_seconds WHERE session_id IN (SELECT id FROM sessions WHERE start_utc < $cutoff);
+            DELETE FROM outbox WHERE created_utc < $cutoff;
             """;
         cmd.Parameters.AddWithValue("$cutoff", cutoff);
         return cmd.ExecuteNonQuery();

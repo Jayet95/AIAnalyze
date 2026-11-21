@@ -301,7 +301,8 @@ async function openSession(id) {
       ? el("div", { class: "findings" }, r.findings.map((f) =>
           el("div", { class: `finding ${f.severity}` },
             el("span", { class: `badge ${f.severity}` }, f.severity),
-            el("div", {}, el("div", { class: "kind" }, humanKind(f.kind)), f.message))))
+            el("div", {}, el("div", { class: "kind" }, humanKind(f.kind)), f.message,
+              el("div", { style: "margin-top:6px" }, voteButtons("finding", f.kind))))))
       : el("div", { class: "findings" }, el("div", { class: "finding" }, el("span", { class: "badge Info" }, "OK"),
           el("div", {}, r.rows.length < 10 ? "Too little data in this session to judge." : "Nothing unusual found in this session."))),
     r.feedback ? feedbackBlock(r.feedback) : "",
@@ -422,7 +423,8 @@ async function refreshHealth() {
       el("span", { class: `dot ${c.severity ?? ""}` }),
       el("div", {},
         el("div", { class: "check-title" }, c.title),
-        el("div", { class: "check-summary" }, c.summary)),
+        el("div", { class: "check-summary" }, c.summary),
+        problem || c.severity === "Info" ? el("div", { style: "margin-top:4px" }, voteButtons("health", c.id)) : null),
       problem || c.severity === "Info"
         ? el("button", { class: "text-btn", onclick: () => openChat({ question: `About "${c.title}": ${c.summary} What does this mean for me, and what should I do?`, sessionId: null }) }, "Ask about this")
         : el("span"));
@@ -500,6 +502,7 @@ const chat = {
   messages: [],          // { role: "user" | "assistant", content }
   focusSessionId: null,  // session the question is about, if any
   configured: null,
+  signInAvailable: false,
   busy: false,
   controller: null,
 };
@@ -546,10 +549,17 @@ function renderAnswer(text) {
 function renderChat() {
   const box = $("#chat-messages");
   if (chat.configured === false) {
-    box.replaceChildren(el("div", { class: "setup-note" },
-      el("b", {}, "The assistant needs your own Anthropic API key."),
-      el("div", { style: "margin-top:6px" }, "Rerun the installer as Administrator with ", el("code", {}, "-SetApiKey"),
-        " and paste your key when asked. The key stays on this PC in a file only Windows administrators can read.")));
+    box.replaceChildren(chat.signInAvailable
+      ? el("div", { class: "setup-note" },
+          el("b", {}, "Sign in to use the assistant. It's free during the beta."),
+          el("div", { style: "margin:8px 0" }, "Sign-in opens in your browser and brings you back here."),
+          el("a", { class: "primary-btn", href: "/auth/sign-in" }, "Sign in"),
+          el("div", { class: "muted small", style: "margin-top:10px" }, "Advanced: you can also use your own Anthropic API key by rerunning the installer with ",
+            el("code", {}, "-SetApiKey"), "."))
+      : el("div", { class: "setup-note" },
+          el("b", {}, "The assistant needs your own Anthropic API key."),
+          el("div", { style: "margin-top:6px" }, "Rerun the installer as Administrator with ", el("code", {}, "-SetApiKey"),
+            " and paste your key when asked. The key stays on this PC in a file only Windows administrators can read.")));
     $("#chat-suggestions").replaceChildren();
     $("#chat-send").disabled = true;
     return;
@@ -560,12 +570,15 @@ function renderChat() {
     box.replaceChildren(el("div", { class: "chat-empty" },
       "Ask about temperatures, FPS, a session or an alert. Answers use what this PC has measured."));
   } else {
-    box.replaceChildren(...chat.messages.map((m, i) => {
+    box.replaceChildren(...chat.messages.flatMap((m, i) => {
       const bubble = el("div", { class: `bubble ${m.role}${m.error ? " error" : ""}`, dir: "auto" });
       if (m.role === "assistant" && !m.error) bubble.innerHTML = renderAnswer(m.content);
       else bubble.textContent = m.content;
-      if (chat.busy && i === chat.messages.length - 1 && m.role === "assistant") bubble.classList.add("pending");
-      return bubble;
+      const streaming = chat.busy && i === chat.messages.length - 1 && m.role === "assistant";
+      if (streaming) bubble.classList.add("pending");
+      return m.role === "assistant" && !m.error && !streaming && m.content
+        ? [bubble, voteButtons("answer", "chat", m)]
+        : [bubble];
     }));
     box.scrollTop = box.scrollHeight;
   }
@@ -583,7 +596,13 @@ async function openChat({ question, sessionId } = {}) {
   $("#chat").classList.add("open");
   $("#chat").setAttribute("aria-hidden", "false");
   if (chat.configured === null) {
-    try { chat.configured = (await getJson("/api/chat/status")).configured; } catch { chat.configured = false; }
+    try {
+      const status = await getJson("/api/chat/status");
+      chat.configured = status.configured;
+      chat.signInAvailable = status.signInAvailable;
+    } catch {
+      chat.configured = false;
+    }
   }
   renderChat();
   if (question) ask(question);
@@ -743,6 +762,167 @@ document.addEventListener("click", (ev) => {
   if (!panel.contains(ev.target) && ev.target !== $("#alerts-btn")) panel.classList.add("hidden");
 });
 
+// ---------------------------------------------------------------- feedback votes
+
+/** "Helpful? 👍 👎" for a finding, health check or answer. Votes stay on this PC unless sharing is on. */
+function voteButtons(target, kind, memo) {
+  const box = el("span", { class: "vote" });
+  const thanks = () => { box.className = "vote done"; box.replaceChildren("Thanks for the feedback"); };
+  if (memo?.voted) { thanks(); return box; }
+  const icon = (up) => {
+    const b = el("button", { type: "button", title: up ? "Helpful" : "Not helpful", "aria-label": up ? "Helpful" : "Not helpful" });
+    b.innerHTML = up
+      ? '<svg viewBox="0 0 24 24" width="14" height="14"><path d="M7 11v9H4v-9h3zm2 9h8.5a2 2 0 0 0 2-1.6l1.2-6A2 2 0 0 0 18.7 10H14l.8-4a1.6 1.6 0 0 0-3-1L9 11v9z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/></svg>'
+      : '<svg viewBox="0 0 24 24" width="14" height="14"><path d="M7 13V4H4v9h3zm2-9h8.5a2 2 0 0 1 2 1.6l1.2 6A2 2 0 0 1 18.7 14H14l.8 4a1.6 1.6 0 0 1-3 1L9 13V4z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/></svg>';
+    b.addEventListener("click", async () => {
+      try {
+        await fetch("/api/feedback", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ target, kind, helpful: up }) });
+        if (memo) { memo.voted = true; saveChat(); }
+        thanks();
+      } catch { /* ignore */ }
+    });
+    return b;
+  };
+  box.append("Helpful?", icon(true), icon(false));
+  return box;
+}
+
+// ---------------------------------------------------------------- account
+
+let account = null;
+
+function infoToast(message) {
+  const toast = el("div", { class: "toast", style: "border-left-color: var(--ok)" }, el("div", {}, message));
+  $("#toasts").append(toast);
+  setTimeout(() => toast.remove(), 6000);
+}
+
+async function refreshAccount() {
+  try { account = await getJson("/api/account"); } catch { return; }
+  const btn = $("#account-btn");
+  btn.textContent = account.signedIn ? (account.name || account.email || "Account") : account.signInConfigured ? "Sign in" : "Settings";
+  btn.title = account.signedIn ? `Signed in as ${account.email ?? account.name}` : "";
+}
+
+function renderAccountPanel() {
+  const panel = $("#account-panel");
+  const settings = el("button", { class: "text-btn", onclick: openSettings }, "Settings");
+  if (!account) { panel.replaceChildren(settings); return; }
+  if (account.signedIn) {
+    const q = account.quota;
+    panel.replaceChildren(
+      el("div", {}, el("div", { class: "check-title" }, account.name || "Signed in"), el("div", { class: "muted" }, account.email ?? "")),
+      q ? el("div", {},
+            el("div", { class: "row small" }, el("span", {}, "Assistant questions today"), el("b", {}, `${q.questionsToday} of ${q.dailyLimit}`)),
+            el("div", { class: "quota-bar" }, el("span", { style: `width:${Math.min(100, (q.questionsToday / Math.max(1, q.dailyLimit)) * 100)}%` })))
+        : null,
+      el("div", { class: "row" }, settings, el("button", { class: "text-btn", onclick: signOut }, "Sign out")));
+  } else if (account.signInConfigured) {
+    panel.replaceChildren(
+      el("div", {}, el("div", { class: "check-title" }, "Sign in to AIAnalyze"),
+        el("div", { class: "muted" }, "Use the assistant for free during the beta. Sign-in opens in your browser.")),
+      el("div", { class: "row" }, settings, el("a", { class: "primary-btn", href: "/auth/sign-in" }, "Sign in")));
+  } else {
+    panel.replaceChildren(el("div", { class: "muted" }, "Accounts aren't set up in this build."), settings);
+  }
+}
+
+async function signOut() {
+  await fetch("/api/account/sign-out", { method: "POST" }).catch(() => {});
+  chat.configured = null;
+  $("#account-panel").classList.add("hidden");
+  await refreshAccount();
+  infoToast("Signed out.");
+}
+
+$("#account-btn").addEventListener("click", async (ev) => {
+  ev.stopPropagation();
+  const panel = $("#account-panel");
+  if (panel.classList.contains("hidden")) {
+    await refreshAccount();
+    renderAccountPanel();
+  }
+  panel.classList.toggle("hidden");
+});
+document.addEventListener("click", (ev) => {
+  const panel = $("#account-panel");
+  if (!panel.contains(ev.target) && ev.target !== $("#account-btn")) panel.classList.add("hidden");
+});
+
+// ---------------------------------------------------------------- settings and privacy
+
+async function openSettings({ showPreview = false } = {}) {
+  $("#account-panel").classList.add("hidden");
+  const body = $("#settings-body");
+  body.replaceChildren(el("div", { class: "muted" }, "Loading…"));
+  $("#settings").classList.remove("hidden");
+
+  let privacy;
+  try {
+    [privacy] = await Promise.all([getJson("/api/privacy"), refreshAccount()]);
+  } catch {
+    body.replaceChildren(el("div", { class: "muted" }, "Could not load settings."));
+    return;
+  }
+
+  const assistantText = {
+    Account: "On, through your AIAnalyze account.",
+    ApiKey: "On, with your own Anthropic API key.",
+    Off: account?.signInConfigured ? "Off. Sign in to turn it on." : "Off. Add your own API key with the installer's -SetApiKey option.",
+  }[account?.assistant ?? "Off"];
+
+  const preview = el("pre", { class: `preview ${showPreview ? "" : "hidden"}` }, JSON.stringify(privacy.preview, null, 2));
+  const toggle = el("input", { type: "checkbox", id: "share-toggle" });
+  toggle.checked = privacy.consent === true;
+  toggle.addEventListener("change", async () => {
+    await setConsent(toggle.checked);
+  });
+
+  body.replaceChildren(
+    el("div", { class: "setting" },
+      el("h3", {}, "Account"),
+      el("p", {}, account?.signedIn ? `Signed in as ${account.email ?? account.name}.` : account?.signInConfigured ? "Not signed in." : "Accounts aren't set up in this build."),
+      account?.signedIn
+        ? el("button", { class: "text-btn", onclick: async () => { await signOut(); openSettings(); } }, "Sign out")
+        : account?.signInConfigured ? el("a", { class: "primary-btn", href: "/auth/sign-in" }, "Sign in") : null),
+    el("div", { class: "setting" }, el("h3", {}, "Assistant"), el("p", {}, assistantText)),
+    el("div", { class: "setting" },
+      el("h3", {}, "Privacy"),
+      el("label", { class: "toggle", for: "share-toggle" }, toggle,
+        el("span", {}, el("b", {}, "Share anonymous diagnostics to help improve AIAnalyze"),
+          el("div", { class: "muted" }, "Once a day: hardware models, driver versions, Windows build, which health checks failed, which finding types appeared, and how games ran (game file name and FPS). Plus your Helpful / Not helpful votes. Never names of your files, folders or other programs, never Event Log text, never chat content. Tied to a random ID for this install, and to your account only if you're signed in."))),
+      privacy.serverConfigured ? null : el("p", { class: "small", style: "margin-top:8px" }, "This build has no server set up yet, so nothing is sent even when sharing is on."),
+      el("button", { class: "text-btn", onclick: () => preview.classList.toggle("hidden") }, "Show exactly what is shared"),
+      preview),
+  );
+}
+
+async function setConsent(share) {
+  await fetch("/api/privacy", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ share }) }).catch(() => {});
+  $("#consent-banner").classList.add("hidden");
+}
+
+$("#settings-close").addEventListener("click", () => $("#settings").classList.add("hidden"));
+$("#settings").addEventListener("click", (ev) => { if (ev.target === $("#settings")) $("#settings").classList.add("hidden"); });
+$("#consent-yes").addEventListener("click", () => { setConsent(true); infoToast("Thanks! Sharing is on. You can turn it off in Settings."); });
+$("#consent-no").addEventListener("click", () => setConsent(false));
+$("#consent-details").addEventListener("click", () => openSettings({ showPreview: true }));
+document.addEventListener("keydown", (ev) => { if (ev.key === "Escape") $("#settings").classList.add("hidden"); });
+
+async function initAccountAndPrivacy() {
+  await refreshAccount();
+  if (location.hash === "#signed-in") {
+    history.replaceState(null, "", location.pathname);
+    chat.configured = null;
+    infoToast(`Signed in${account?.email ? ` as ${account.email}` : ""}.`);
+  }
+  try {
+    const privacy = await getJson("/api/privacy");
+    if (privacy.consent === null) $("#consent-banner").classList.remove("hidden");
+  } catch { /* ignore */ }
+}
+
+initAccountAndPrivacy();
 loadChat();
 refreshAlerts();
 setInterval(() => { if (!document.hidden) refreshAlerts(); }, 10000);

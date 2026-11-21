@@ -1,0 +1,24 @@
+# AIAnalyze API on Cloudflare Workers. Deploy steps are in server/README.md.
+name = "aianalyze-api"
+main = "src/index.ts"
+compatibility_date = "2026-10-01"
+compatibility_flags = ["nodejs_compat"]
+
+[vars]
+# OpenID Connect issuer of your sign-in provider, for example https://your-app.clerk.accounts.dev
+OIDC_ISSUER = ""
+# Optional: the OAuth client ID of the desktop app; when set, tokens issued to other clients are rejected.
+OIDC_CLIENT_ID = ""
+MODEL = "claude-opus-5-5"
+DAILY_FREE_QUESTIONS = "30"
+
+# ANTHROPIC_API_KEY is a secret: set it with `npx wrangler secret put ANTHROPIC_API_KEY`, never here.
+
+[[d1_databases]]
+binding = "DB"
+database_name = "aianalyze"
+database_id = "REPLACE_WITH_YOUR_D1_DATABASE_ID"
+
+# Daily cleanup of old telemetry and usage rows.
+[triggers]
+crons = ["0 3 * * *"]

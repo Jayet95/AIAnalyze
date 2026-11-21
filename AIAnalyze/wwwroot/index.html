@@ -30,16 +30,27 @@
         <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path d="M6 16V11a6 6 0 1 1 12 0v5l1.5 2h-15L6 16zm4 4h4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
         <span id="alert-count" class="count hidden"></span>
       </button>
+      <button id="account-btn" class="account-btn" aria-label="Account">Sign in</button>
       <button id="chat-btn" class="primary-btn">
         <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path d="M4 5h16v11H9l-5 4V5z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></svg>
         Ask AI
       </button>
     </div>
     <div id="alerts-panel" class="alerts-panel hidden" role="dialog" aria-label="Alerts"></div>
+    <div id="account-panel" class="alerts-panel account-panel hidden" role="dialog" aria-label="Account"></div>
   </header>
 
   <main>
     <section id="tab-health" class="tab-panel active">
+      <div id="consent-banner" class="panel consent hidden">
+        <div class="grow">
+          <div class="check-title">Help make AIAnalyze better?</div>
+          <div class="muted">Share anonymous diagnostics: hardware models, driver versions, which checks failed and how games ran. Never names of your files or programs, never chat content. You can change this any time in Settings.</div>
+        </div>
+        <button class="text-btn" id="consent-details">What is shared?</button>
+        <button class="text-btn" id="consent-no">No thanks</button>
+        <button class="primary-btn" id="consent-yes">Share</button>
+      </div>
       <div class="panel health-overview" id="health-overview">
         <div class="empty">Running the first health check…</div>
       </div>
@@ -118,6 +129,18 @@
       <button type="submit" class="primary-btn" id="chat-send">Send</button>
     </form>
   </aside>
+
+  <div id="settings" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-label="Settings">
+    <div class="modal">
+      <div class="drawer-head">
+        <div class="drawer-title">Settings</div>
+        <button class="icon-btn" id="settings-close" aria-label="Close">
+          <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+        </button>
+      </div>
+      <div class="modal-body" id="settings-body"></div>
+    </div>
+  </div>
 
   <div id="toasts" class="toasts" aria-live="polite"></div>
   <div id="tooltip" class="tooltip hidden"></div>

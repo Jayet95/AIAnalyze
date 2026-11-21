@@ -15,7 +15,7 @@ public sealed class FpsMonitorService(
     ILogger<FpsMonitorService> logger,
     IOptions<PresentMonOptions> options,
     CaptureStatus status,
-    Chat.ClaudeChat chat) : BackgroundService
+    Chat.ChatRouter chat) : BackgroundService
 {
     // Automatic AI feedback spends the user's API credits, so it is rate-limited.
     private static readonly TimeSpan FeedbackInterval = TimeSpan.FromMinutes(10);
