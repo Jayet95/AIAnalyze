@@ -560,7 +560,7 @@ First computer, same hardware as before. Reinstalled elevated with `install-serv
 ### What works
 
 - **FurMark attribution (Round 12 item 27) is fixed.** While FurMark ran, `/api/status` `capture.applications` listed `furmark.exe` (about 253 FPS live, not excluded), and `msedge.exe`, `msedgewebview2.exe`, `dwm.exe`, `Code.exe` as `excluded: true`. The saved session is id 261: `furmark.exe`, 91 s, 48,112 frames, median 537.1 FPS, RTX 5080 99% busy, GpuBound finding, **no false Stutter finding** (Round 11 item 23 looks fixed as well).
-- **Window app:** `AIAnalyze.Desktop.exe` started from `C:\Program Files\AIAnalyze\desktop`, `desktop.log` shows `WebView2 157.0.4341.60 ready; opening http://127.0.0.1:5280/`, and the Start menu has `AIAnalyze.lnk`. Not checked by me: the tray icon menu and the Windows notification (needs a person looking at the screen).
+- **Window app:** `AIAnalyze.Desktop.exe` started from `C:\Program Files\AIAnalyze\desktop`, `desktop.log` shows `WebView2 157.0.4341.60 ready; opening http://127.0.0.1:5280/`, and the Start menu has `AIAnalyze.lnk`. Confirmed by the user on screen: the tray icon appears, the window opens, the right-click menu works, and the Windows notification appears while the window is closed.
 - Defender found nothing; the service runs; the new UI is served (`AIAnalyze — PC Health`).
 
 ### 28. `build-ui.ps1` cannot run npm: cmd quoting (must fix)
@@ -593,4 +593,4 @@ Cleanup: `--delete-sessions` can remove the junk by time range, but a `--delete-
 
 ### Not tested
 
-Tray menu, Windows notification, Start with Windows, the assistant with an API key (no key), the visual pages.
+Start with Windows (not toggled), the assistant with an API key (no key), the visual pages.
