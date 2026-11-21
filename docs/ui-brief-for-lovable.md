@@ -216,6 +216,26 @@ Pause polling when `document.hidden` is true.
 
 ---
 
+## 6a. Update: accounts, privacy and feedback (send this to Lovable as a follow-up)
+
+> Add accounts, a privacy setting and feedback votes to the AIAnalyze dashboard, using these local endpoints (same rules as before: relative URLs, JSON bodies, mock data in fixtures when the service is unreachable).
+>
+> **Account** (button in the top bar, left of Ask AI)
+> - `GET /api/account` → `{ "signInConfigured": true, "signedIn": true, "email": "player@example.com", "name": "Player One", "assistant": "Account" | "ApiKey" | "Off", "quota": { "questionsToday": 4, "dailyLimit": 30 } | null }`
+> - Signed out and `signInConfigured`: button "Sign in". Signed in: name or email; menu shows email, "Assistant questions today 4 of 30" with a thin bar, Settings, Sign out. When `signInConfigured` is false, the button just opens Settings.
+> - Sign in is a full-page navigation to `/auth/sign-in` (a link, not fetch). The browser comes back to `/#signed-in`: show a toast "Signed in as …" and clear the hash.
+> - `POST /api/account/sign-out` → `{ "signedIn": false }`.
+>
+> **Assistant setup state**: `GET /api/chat/status` → `{ "configured": false, "mode": "Off" | "Account" | "ApiKey", "signInAvailable": true }`. When not configured and `signInAvailable`, the chat drawer shows "Sign in to use the assistant. It's free during the beta." with a Sign in link to `/auth/sign-in`, plus a small "Advanced: use your own Anthropic API key with the installer's -SetApiKey option." When `signInAvailable` is false, keep the current API-key setup card.
+>
+> **Privacy** (Settings dialog, and a one-time banner on Health)
+> - `GET /api/privacy` → `{ "consent": true | false | null, "serverConfigured": true, "preview": { "deviceId": "…", "snapshot": { … }, "feedback": [ … ] } }`
+> - `POST /api/privacy` with `{ "share": true | false }`.
+> - When `consent` is null, show a calm banner at the top of Health: "Help make AIAnalyze better? Share anonymous diagnostics: hardware models, driver versions, which checks failed and how games ran. Never names of your files or programs, never chat content." Buttons: What is shared? (opens Settings with the preview expanded), No thanks, Share.
+> - Settings has a toggle "Share anonymous diagnostics to help improve AIAnalyze" with that explanation, a note "This build has no server set up yet, so nothing is sent" when `serverConfigured` is false, and "Show exactly what is shared" revealing `preview` as formatted JSON.
+>
+> **Feedback votes**: "Helpful? 👍 👎" on each Health problem or suggestion (`target: "health"`, `kind`: the check id), each session finding (`target: "finding"`, `kind`: the finding kind), and each finished assistant answer (`target: "answer"`, `kind: "chat"`). Send `POST /api/feedback` with `{ "target": "...", "kind": "...", "helpful": true | false }`; afterwards replace the buttons with "Thanks for the feedback". Votes are kept on the PC and uploaded only when sharing is on, so no extra wording is needed.
+
 ## 7. Putting the build into the app
 
 1. Export the Lovable project to GitHub (or download it).
