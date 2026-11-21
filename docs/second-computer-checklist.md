@@ -1,6 +1,6 @@
 # Second computer: checklist
 
-Commands run in PowerShell. Steps marked **Administrator** need an elevated window.
+This build adds the local UI, session findings, the fixes from Round 10 (GPU choice, AMD CPU power, waiting for sign-in) and automatic cleanup of stale ETW trace sessions. Commands run in PowerShell. Steps marked **Administrator** need an elevated window.
 
 ## 1. Pull the latest code
 
@@ -8,145 +8,54 @@ Commands run in PowerShell. Steps marked **Administrator** need an elevated wind
 git pull
 ```
 
-## 2. Install the latest build as a service (Administrator)
+## 2. Reinstall (Administrator)
+
+PresentMon is already in `C:\Program Files\AIAnalyze\PresentMon` on the first computer, and the reinstall keeps it:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File scripts\install-service.ps1
 ```
 
-The script publishes the new build, recreates the service, and starts it.
-
-## 3. Check the service
+On a new computer, add the path to PresentMon the first time:
 
 ```powershell
-Get-Service AIAnalyze
+powershell -ExecutionPolicy Bypass -File scripts\install-service.ps1 -PresentMonPath C:\Path\To\PresentMon.exe
 ```
 
-Expected: `Running`.
+The service must run as LocalSystem, which is the default. The script opens the UI when it finishes.
 
-## 4. Check the PresentMon override file
+The existing `C:\ProgramData\AIAnalyze\appsettings.json` still works. It is no longer needed: with PresentMon in the `PresentMon` folder, the defaults are the same as the values in it.
 
-`C:\ProgramData\AIAnalyze\appsettings.json` must hold the PresentMon path. It survives reinstalls. If it is missing, create it as in the README (second computer test, step 5).
+## 3. Check the UI
 
-## 5. Make sure no other PresentMon is running
+Open **AIAnalyze** from the Start menu, or <http://127.0.0.1:5280/>.
 
-RivaTuner (RTSS), NVIDIA FrameView and AMD Adrenalin all bundle PresentMon, and their presence changed the result in the earlier test. Check what is running:
+- **Live**: all six cards show numbers. The top-right pill says **Capturing FPS**. The GPU named above the temperature chart is the RTX 5080, not the integrated Radeon.
+- **System**: the PC's model, CPU, RAM and both GPUs with driver versions.
 
-```powershell
-Get-Process RTSS, RTSSHooksLoader64, MSIAfterburner, FrameView*, RadeonSoftware -ErrorAction SilentlyContinue | Select-Object Name, Id
-```
+## 4. Play for at least 5 minutes, then close the game and wait 1 minute
 
-Close them all before the first test. MSI Afterburner starts RTSS again, so close Afterburner from the tray (right-click, Exit), not only RTSS. Leave `nvcontainer` running, because it belongs to the NVIDIA driver.
+A session is saved 30 seconds after the game stops, and only with at least 300 frames.
 
-## 6. Play a game for at least 5 minutes, then close it and wait 1 minute
+## 5. Check the session
 
-A session is saved only after 30 seconds without frames, and only with at least 300 frames. Running the next step right after quitting shows nothing.
+On the **Sessions** tab, open the game's session.
 
-## 7. Read the warnings in the Event Log
+- The GPU line under the title is the RTX 5080.
+- The GPU % and GPU clock charts show real values, not 0 and 600.
+- The CPU W column has values (`--timeline <id>` shows it).
+- The findings make sense for what you played, for example "Limited by the GPU" in a demanding game, or "Frame rate capped" with V-Sync on.
 
-```powershell
-Get-WinEvent -FilterHashtable @{LogName='Application'; ProviderName='AIAnalyze'} -MaxEvents 40 | Format-List TimeCreated, Message
-```
+## 6. Reboot test
 
-The Event Log keeps only Warning and above, so these lines are the ones to look for:
-
-- `PresentMon: ...` is PresentMon's own error output.
-- `PresentMon output before header (skipped): ...` shows the first line PresentMon printed.
-- `PresentMon exited. Restarting ...` means PresentMon stopped.
-
-Session saves are Information and do not appear here. Check them with step 8.
-
-## 8. Check sessions and the timeline
-
-```powershell
-dotnet "C:\Program Files\AIAnalyze\AIAnalyze.dll" --sessions
-dotnet "C:\Program Files\AIAnalyze\AIAnalyze.dll" --timeline <id>
-```
-
-Replace `<id>` with the game's id from the `--sessions` output.
-
-## First computer only (Administrator): delete the junk test sessions
-
-Skip this on a new machine. A count of 0 is expected there.
-Run this section in an elevated window. The database is owned by the service account, and `Stop-Service` needs Administrator.
-
-The 9,766 junk sessions from the 30-second run exist only on the first computer. Stop the service, count, delete, and start it again. Stop the service first, so the delete does not compete with it for the database.
-
-```powershell
-Stop-Service AIAnalyze
-dotnet "C:\Program Files\AIAnalyze\AIAnalyze.dll" --count-sessions 1795165768000 1795165787000
-```
-
-If the count is about 9,766:
-
-```powershell
-dotnet "C:\Program Files\AIAnalyze\AIAnalyze.dll" --delete-sessions 1795165768000 1795165787000
-Start-Service AIAnalyze
-```
+Restart the PC, sign in, wait a minute, and play again. Capture should work without reinstalling. Before you sign in, the Event Log should show one `Waiting for a user to sign in` warning, not an error every 30 seconds.
 
 ## What to send back
 
-- The output of step 3, and the output of the process check in step 5.
-- The Event Log output from step 7.
-- The `--sessions` output from step 8.
-- For the first computer, the counts from the cleanup.
+- Screenshots of the Live tab and of one session.
+- Whether each point in steps 3, 5 and 6 matched.
+- The Event Log, if anything did not match:
 
-## Known open problem
-
-If no frames arrive while the service runs alone, PresentMon may not see the rendering app from session 0. See `docs/fix-presentmon-capture.md` on the branch `fix/presentmon-capture-notes`, section 4.
-
-## Test: run the service under an administrator account
-
-Use this only after the clean test (step 5 and 6) shows no frames. Run it with all other PresentMon-related tools closed.
-
-**Note:** Windows services run in session 0 whatever account they use. This test checks whether the account matters. It may not fix the problem, and a negative result is still useful.
-
-1. Reinstall the service under your admin account. The script prompts for the credential:
-
-   ```powershell
-   powershell -ExecutionPolicy Bypass -File scripts\install-service.ps1 -ServiceCredential (Get-Credential)
-   ```
-
-   Enter the account as `.\<username>` (for a local account) or `DOMAIN\<username>`.
-
-2. Check the account:
-
-   ```powershell
-   Get-CimInstance Win32_Service -Filter "Name='AIAnalyze'" | Select-Object Name, StartName, State
-   ```
-
-3. Play the game for 5 minutes, close it, and wait 1 minute.
-
-4. Check the Event Log and sessions (steps 7 and 8 above). Send both back, together with the output of step 2.
-
-To return to LocalSystem, reinstall without `-ServiceCredential`.
-
-## Test: user-session mode (PresentMon runs in your logged-on session)
-
-Use this after the admin-account test. It needs the service to run as **LocalSystem**, which is the default. Reinstall without `-ServiceCredential` if the service runs as another account.
-
-1. Check that PresentMon accepts the output flag:
-
-   ```powershell
-   & "C:\Program Files\AIAnalyze\PresentMon\PresentMon.exe" --help | Select-String output_stdout
-   ```
-
-   If nothing is printed, send the full `--help` output instead of continuing.
-
-2. Add `"UserSession": true` to the `PresentMon` section of `C:\ProgramData\AIAnalyze\appsettings.json`, then restart the service:
-
-   ```json
-   "PresentMon": {
-     "ExecutablePath": "C:\\Program Files\\AIAnalyze\\PresentMon\\PresentMon.exe",
-     "Arguments": "--no_console_stats --v1_metrics --session_name AIAnalyze --stop_existing_session",
-     "UserSession": true
-   }
-   ```
-
-   The service runs PresentMon with `--output_stdout` and reads its output through an anonymous pipe, so no file is written. Leave the arguments as above.
-
-3. Make sure you are logged on at the console, close other PresentMon tools, and play for 5 minutes, then close the game and wait 1 minute.
-
-4. Send back the Event Log (step 7, including the `Started PresentMon` line and any `PresentMon:` stderr lines) and the `--sessions` output (step 8).
-
-Event Log lines to expect: `Started PresentMon (pid ...) in console session ...`. If the start fails, the error includes the Win32 code, which is the important part.
+  ```powershell
+  Get-WinEvent -FilterHashtable @{LogName='Application'; ProviderName='AIAnalyze'} -MaxEvents 40 | Format-List TimeCreated, Message
+  ```

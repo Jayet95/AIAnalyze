@@ -1,21 +1,21 @@
 using AIAnalyze.Analysis;
+using AIAnalyze.Reports;
 using AIAnalyze.Storage;
+using Microsoft.Extensions.Hosting.WindowsServices;
 using Microsoft.Extensions.Options;
 
 namespace AIAnalyze.Capture;
 
 /// <summary>
-/// Runs PresentMon, groups its frames into sessions per application, stores each session, and
-/// compares it with the personal baseline for that game. Does nothing if PresentMon is not configured.
+/// Runs PresentMon, groups its frames into sessions per application, stores each session with its
+/// findings, and logs what it found. Does nothing if PresentMon is not available.
 /// If PresentMon fails or exits, it is started again after a delay.
 /// </summary>
 public sealed class FpsMonitorService(
     ILogger<FpsMonitorService> logger,
-    IOptions<PresentMonOptions> options) : BackgroundService
+    IOptions<PresentMonOptions> options,
+    CaptureStatus status) : BackgroundService
 {
-    // Settings profile is a placeholder until the app tracks graphics settings per game.
-    private const string SettingsKey = "default";
-
     // An application silent for longer than this ends its session.
     private static readonly TimeSpan IdleGap = TimeSpan.FromSeconds(30);
 
@@ -28,33 +28,65 @@ public sealed class FpsMonitorService(
     // Wait before restarting PresentMon, so a broken setup does not spin.
     private static readonly TimeSpan RestartDelay = TimeSpan.FromSeconds(30);
 
+    // How often to check for a logged-on user while waiting for one.
+    private static readonly TimeSpan UserPollInterval = TimeSpan.FromSeconds(5);
+
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        var runner = new PresentMonRunner(options.Value);
+        var settings = options.Value.Resolved(WindowsServiceHelpers.IsWindowsService());
+        status.SetMode(settings.UserSession);
+
+        var runner = new PresentMonRunner(settings);
         if (!runner.IsConfigured)
         {
-            logger.LogInformation("FPS capture disabled: PresentMon:ExecutablePath is not set.");
+            status.Set(CaptureState.Disabled, "PresentMon was not found. Put PresentMon.exe in the PresentMon folder next to AIAnalyze, or set PresentMon:ExecutablePath.");
+            logger.LogWarning("FPS capture disabled: PresentMon was not found and PresentMon:ExecutablePath is not set.");
             return;
         }
 
+        var etwSession = EtwSessions.SessionNameFrom(settings.Arguments);
         using var store = new SampleStore(TelemetryPaths.DatabasePath);
         var tracker = new SessionTracker(IdleGap, MinFrames, ExcludedApps);
 
         // The tracker and the store are shared by the frame reader and the idle timer.
         var gate = new object();
         var idleTask = CloseIdleSessionsAsync(tracker, store, gate, stoppingToken);
+        var loggedWaiting = false;
 
         try
         {
             while (!stoppingToken.IsCancellationRequested)
             {
+                // At boot, or at the sign-in screen, nobody is logged on: wait quietly instead of failing.
+                if (settings.UserSession && !NativeSession.TryGetLoggedOnConsoleSession(out _))
+                {
+                    if (!loggedWaiting)
+                    {
+                        logger.LogWarning("Waiting for a user to sign in before starting FPS capture.");
+                        status.Set(CaptureState.WaitingForUser, "Waiting for a user to sign in.");
+                        loggedWaiting = true;
+                    }
+                    if (!await DelayAsync(UserPollInterval, stoppingToken))
+                    {
+                        break;
+                    }
+                    continue;
+                }
+                loggedWaiting = false;
+
+                if (EtwSessions.TryStop(etwSession))
+                {
+                    logger.LogInformation("Stopped a leftover ETW trace session named {Session}.", etwSession);
+                }
+
                 var lineParser = new PresentMonLineParser();
                 var loggedPreHeaderLine = false;
+                status.Set(CaptureState.Running, "Capturing frames.");
 
                 try
                 {
-                    var lines = options.Value.UserSession
-                        ? new UserSessionFrameSource(options.Value).ReadLinesAsync(
+                    var lines = settings.UserSession
+                        ? new UserSessionFrameSource(settings).ReadLinesAsync(
                             stoppingToken,
                             msg => logger.LogInformation("{Message}", msg),
                             err => logger.LogWarning("PresentMon: {Line}", err))
@@ -73,9 +105,11 @@ public sealed class FpsMonitorService(
                             continue;
                         }
 
+                        var now = DateTimeOffset.UtcNow;
+                        status.FrameSeen(frame.Application, now);
                         lock (gate)
                         {
-                            foreach (var closed in tracker.AddFrame(frame, DateTimeOffset.UtcNow))
+                            foreach (var closed in tracker.AddFrame(frame, now))
                             {
                                 Record(store, closed);
                             }
@@ -93,6 +127,9 @@ public sealed class FpsMonitorService(
                     logger.LogError(ex, "FPS capture stopped unexpectedly. Restarting in {Delay}.", RestartDelay);
                 }
 
+                status.Set(CaptureState.Restarting, $"PresentMon stopped; restarting in {RestartDelay.TotalSeconds:F0} seconds.");
+                EtwSessions.TryStop(etwSession);
+
                 // Save what was captured before the stop; the next run starts new sessions.
                 lock (gate)
                 {
@@ -102,11 +139,7 @@ public sealed class FpsMonitorService(
                     }
                 }
 
-                try
-                {
-                    await Task.Delay(RestartDelay, stoppingToken);
-                }
-                catch (OperationCanceledException)
+                if (!await DelayAsync(RestartDelay, stoppingToken))
                 {
                     break;
                 }
@@ -130,6 +163,21 @@ public sealed class FpsMonitorService(
                     Record(store, finished);
                 }
             }
+            EtwSessions.TryStop(etwSession);
+        }
+    }
+
+    /// <summary>Waits, returning false when the service is stopping.</summary>
+    private static async Task<bool> DelayAsync(TimeSpan delay, CancellationToken stoppingToken)
+    {
+        try
+        {
+            await Task.Delay(delay, stoppingToken);
+            return true;
+        }
+        catch (OperationCanceledException)
+        {
+            return false;
         }
     }
 
@@ -163,24 +211,33 @@ public sealed class FpsMonitorService(
         }
     }
 
+    /// <summary>Saves a session, analyses it, stores the findings and logs them.</summary>
     private void Record(SampleStore store, CompletedSession session)
     {
-        // Compare against earlier sessions only, so the current session does not vote on its own baseline.
-        var previous = store.GetSessionFps(session.Application, SettingsKey);
-        var baseline = previous.Count == 0
-            ? null
-            : BaselineRules.BuildBaseline(session.Application, SettingsKey, previous);
+        var id = store.InsertSession(session, SessionReports.SettingsKey);
+        status.SessionSaved(DateTimeOffset.UtcNow);
 
-        var result = BaselineRules.Evaluate(baseline, session.MedianFps);
-        store.InsertSession(session, SettingsKey);
-
-        if (result.Kind == DeviationKind.FpsDrop)
+        var stored = store.GetSession(id);
+        if (stored is null)
         {
-            logger.LogWarning("{Message}", result.Message);
+            return;
         }
-        else
+
+        var report = SessionReports.Build(store, stored);
+        store.SaveFindings(id, report.Findings);
+
+        logger.LogInformation("Session {Id} saved: {App}, {Frames} frames, median {Fps:F0} FPS. {Baseline}",
+            id, session.Application, session.FrameCount, session.MedianFps, report.Deviation.Message);
+        foreach (var finding in report.Findings)
         {
-            logger.LogInformation("Session saved. {Message}", result.Message);
+            if (finding.Severity == FindingSeverity.Info)
+            {
+                logger.LogInformation("Session {Id}: {Message}", id, finding.Message);
+            }
+            else
+            {
+                logger.LogWarning("Session {Id}: {Message}", id, finding.Message);
+            }
         }
     }
 }

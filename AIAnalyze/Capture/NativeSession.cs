@@ -113,6 +113,25 @@ internal static class NativeSession
     private static extern bool CloseHandle(IntPtr handle);
 
     /// <summary>
+    /// Returns the console session id when a user is logged on there. At boot there is no console
+    /// session, and at the sign-in screen there is a session but no user token; both return false.
+    /// </summary>
+    internal static bool TryGetLoggedOnConsoleSession(out uint sessionId)
+    {
+        sessionId = WTSGetActiveConsoleSessionId();
+        if (sessionId == NoActiveSession)
+        {
+            return false;
+        }
+        if (!WTSQueryUserToken(sessionId, out var token))
+        {
+            return false;
+        }
+        CloseHandle(token);
+        return true;
+    }
+
+    /// <summary>
     /// Starts a process with the token of the user logged on at <paramref name="sessionId"/>, with its
     /// stdout and stderr on anonymous pipes. For an administrator with UAC, the elevated linked token is used.
     /// </summary>

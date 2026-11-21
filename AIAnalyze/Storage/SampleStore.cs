@@ -58,8 +58,135 @@ public sealed class SampleStore : IDisposable
                 captured_utc INTEGER NOT NULL,  -- Unix milliseconds
                 specs_json   TEXT    NOT NULL
             );
+            CREATE TABLE IF NOT EXISTS session_findings (
+                session_id INTEGER NOT NULL,
+                kind       TEXT    NOT NULL,
+                severity   TEXT    NOT NULL,
+                message    TEXT    NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS ix_findings_session ON session_findings (session_id);
             """;
         create.ExecuteNonQuery();
+    }
+
+    /// <summary>Median FPS of the sessions of this game that started before the given time.</summary>
+    public IReadOnlyList<double> GetSessionFpsBefore(string application, string settingsKey, DateTimeOffset before)
+    {
+        using var cmd = _connection.CreateCommand();
+        cmd.CommandText = """
+            SELECT median_fps FROM sessions
+            WHERE application = $app AND settings_key = $key AND start_utc < $before;
+            """;
+        cmd.Parameters.AddWithValue("$app", application);
+        cmd.Parameters.AddWithValue("$key", settingsKey);
+        cmd.Parameters.AddWithValue("$before", before.ToUnixTimeMilliseconds());
+
+        var values = new List<double>();
+        using var reader = cmd.ExecuteReader();
+        while (reader.Read())
+        {
+            values.Add(reader.GetDouble(0));
+        }
+        return values;
+    }
+
+    /// <summary>Replaces the stored findings for a session.</summary>
+    public void SaveFindings(long sessionId, IReadOnlyList<Analysis.SessionFinding> findings)
+    {
+        using var transaction = _connection.BeginTransaction();
+
+        using var clear = _connection.CreateCommand();
+        clear.Transaction = transaction;
+        clear.CommandText = "DELETE FROM session_findings WHERE session_id = $id;";
+        clear.Parameters.AddWithValue("$id", sessionId);
+        clear.ExecuteNonQuery();
+
+        using var insert = _connection.CreateCommand();
+        insert.Transaction = transaction;
+        insert.CommandText = "INSERT INTO session_findings (session_id, kind, severity, message) VALUES ($id, $kind, $sev, $msg);";
+        var id = insert.Parameters.Add("$id", SqliteType.Integer);
+        var kind = insert.Parameters.Add("$kind", SqliteType.Text);
+        var sev = insert.Parameters.Add("$sev", SqliteType.Text);
+        var msg = insert.Parameters.Add("$msg", SqliteType.Text);
+        id.Value = sessionId;
+        foreach (var finding in findings)
+        {
+            kind.Value = finding.Kind;
+            sev.Value = finding.Severity.ToString();
+            msg.Value = finding.Message;
+            insert.ExecuteNonQuery();
+        }
+
+        transaction.Commit();
+    }
+
+    /// <summary>Stored findings for a session, most severe first.</summary>
+    public IReadOnlyList<Analysis.SessionFinding> GetFindings(long sessionId)
+    {
+        using var cmd = _connection.CreateCommand();
+        cmd.CommandText = "SELECT kind, severity, message FROM session_findings WHERE session_id = $id;";
+        cmd.Parameters.AddWithValue("$id", sessionId);
+
+        var rows = new List<Analysis.SessionFinding>();
+        using var reader = cmd.ExecuteReader();
+        while (reader.Read())
+        {
+            var severity = Enum.TryParse<Analysis.FindingSeverity>(reader.GetString(1), out var s) ? s : Analysis.FindingSeverity.Info;
+            rows.Add(new Analysis.SessionFinding(reader.GetString(0), severity, reader.GetString(2)));
+        }
+        return rows.OrderByDescending(f => f.Severity).ToList();
+    }
+
+    /// <summary>One saved session by id, or null.</summary>
+    public StoredSession? GetSession(long sessionId)
+    {
+        using var cmd = _connection.CreateCommand();
+        cmd.CommandText = """
+            SELECT id, application, start_utc, end_utc, frame_count, median_fps
+            FROM sessions WHERE id = $id;
+            """;
+        cmd.Parameters.AddWithValue("$id", sessionId);
+        using var reader = cmd.ExecuteReader();
+        return reader.Read()
+            ? new StoredSession(
+                reader.GetInt64(0),
+                reader.GetString(1),
+                DateTimeOffset.FromUnixTimeMilliseconds(reader.GetInt64(2)),
+                DateTimeOffset.FromUnixTimeMilliseconds(reader.GetInt64(3)),
+                reader.GetInt32(4),
+                reader.GetDouble(5))
+            : null;
+    }
+
+    /// <summary>The highest finding severity per session, for session lists.</summary>
+    public IReadOnlyDictionary<long, Analysis.FindingSeverity> GetWorstSeverities(IEnumerable<long> sessionIds)
+    {
+        var result = new Dictionary<long, Analysis.FindingSeverity>();
+        foreach (var id in sessionIds)
+        {
+            var findings = GetFindings(id);
+            if (findings.Count > 0)
+            {
+                result[id] = findings[0].Severity;
+            }
+        }
+        return result;
+    }
+
+    /// <summary>The latest stored hardware snapshot, or null before the first one.</summary>
+    public SystemSpecs? GetLatestSpecs()
+    {
+        using var cmd = _connection.CreateCommand();
+        cmd.CommandText = "SELECT specs_json FROM system_snapshots ORDER BY id DESC LIMIT 1;";
+        return cmd.ExecuteScalar() is string json ? SystemSpecs.FromJson(json) : null;
+    }
+
+    /// <summary>The newest sampling tick time, or null when nothing has been sampled.</summary>
+    public DateTimeOffset? GetLatestSampleTime()
+    {
+        using var cmd = _connection.CreateCommand();
+        cmd.CommandText = "SELECT MAX(ts_utc) FROM samples;";
+        return cmd.ExecuteScalar() is long ms ? DateTimeOffset.FromUnixTimeMilliseconds(ms) : null;
     }
 
     /// <summary>Stores a session and its per-second FPS in one transaction. Returns the new session id.</summary>
@@ -125,6 +252,13 @@ public sealed class SampleStore : IDisposable
         seconds.Parameters.AddWithValue("$to", toMs);
         seconds.ExecuteNonQuery();
 
+        using var findings = _connection.CreateCommand();
+        findings.Transaction = transaction;
+        findings.CommandText = "DELETE FROM session_findings WHERE session_id IN (SELECT id FROM sessions WHERE start_utc BETWEEN $from AND $to);";
+        findings.Parameters.AddWithValue("$from", fromMs);
+        findings.Parameters.AddWithValue("$to", toMs);
+        findings.ExecuteNonQuery();
+
         using var sessions = _connection.CreateCommand();
         sessions.Transaction = transaction;
         sessions.CommandText = "DELETE FROM sessions WHERE start_utc BETWEEN $from AND $to;";
@@ -177,13 +311,31 @@ public sealed class SampleStore : IDisposable
         return rows;
     }
 
-    /// <summary>Sensor readings between two instants (inclusive), in time order.</summary>
-    public IReadOnlyList<StoredReading> GetReadings(DateTimeOffset from, DateTimeOffset to)
+    /// <summary>
+    /// Sensor readings between two instants (inclusive), in time order. Pass sensor names to read only
+    /// those, which skips the many per-core sensors and keeps long sessions cheap to load.
+    /// </summary>
+    public IReadOnlyList<StoredReading> GetReadings(
+        DateTimeOffset from,
+        DateTimeOffset to,
+        IReadOnlyList<string>? sensorNames = null)
     {
         using var cmd = _connection.CreateCommand();
-        cmd.CommandText = """
+        var nameFilter = "";
+        if (sensorNames is { Count: > 0 })
+        {
+            var placeholders = new List<string>();
+            for (var i = 0; i < sensorNames.Count; i++)
+            {
+                placeholders.Add($"$n{i}");
+                cmd.Parameters.AddWithValue($"$n{i}", sensorNames[i]);
+            }
+            nameFilter = $" AND sensor_name IN ({string.Join(", ", placeholders)})";
+        }
+
+        cmd.CommandText = $"""
             SELECT ts_utc, sensor_id, hardware, sensor_name, sensor_type, value
-            FROM samples WHERE ts_utc BETWEEN $from AND $to ORDER BY ts_utc;
+            FROM samples WHERE ts_utc BETWEEN $from AND $to{nameFilter} ORDER BY ts_utc;
             """;
         cmd.Parameters.AddWithValue("$from", from.ToUnixTimeMilliseconds());
         cmd.Parameters.AddWithValue("$to", to.ToUnixTimeMilliseconds());

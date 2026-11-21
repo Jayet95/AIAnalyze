@@ -1,5 +1,11 @@
 using AIAnalyze;
+using AIAnalyze.Capture;
+using AIAnalyze.Reports;
 using AIAnalyze.Sensors;
+using AIAnalyze.Storage;
+using AIAnalyze.Web;
+using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Hosting;
 
 if (args.Contains("--dump-sensors"))
 {
@@ -17,6 +23,15 @@ if (args.Contains("--dump-sensors"))
     return;
 }
 
+if (args.Contains("--seed-demo"))
+{
+    // Development only: writes a synthetic session. Point AIANALYZE_DATA_DIR at a scratch folder first.
+    using var demoStore = new SampleStore(TelemetryPaths.DatabasePath);
+    var demoId = DemoData.Seed(demoStore, DateTimeOffset.UtcNow.AddMinutes(-10));
+    Console.WriteLine($"Seeded demo session {demoId} into {TelemetryPaths.DatabasePath}");
+    return;
+}
+
 // Session cleanup by start time range, in Unix milliseconds: --count-sessions <from> <to> and --delete-sessions <from> <to>.
 var rangeCommand = args.FirstOrDefault(a => a is "--count-sessions" or "--delete-sessions");
 if (rangeCommand is not null)
@@ -31,7 +46,7 @@ if (rangeCommand is not null)
     }
 
     // The service may be writing; stop it first so the delete does not wait on its lock.
-    using var rangeStore = new AIAnalyze.Storage.SampleStore(AIAnalyze.Capture.TelemetryPaths.DatabasePath);
+    using var rangeStore = new SampleStore(TelemetryPaths.DatabasePath);
     if (rangeCommand == "--count-sessions")
     {
         Console.WriteLine($"Sessions in range: {rangeStore.CountSessionsBetween(fromMs, toMs)}");
@@ -46,7 +61,7 @@ if (rangeCommand is not null)
 if (args.Contains("--sessions"))
 {
     // Lists recent saved sessions so one can be inspected with --timeline <id>.
-    using var listStore = new AIAnalyze.Storage.SampleStore(AIAnalyze.Capture.TelemetryPaths.DatabasePath);
+    using var listStore = new SampleStore(TelemetryPaths.DatabasePath);
     foreach (var session in listStore.ListSessions(30))
     {
         Console.WriteLine(
@@ -59,38 +74,40 @@ if (args.Contains("--sessions"))
 var timelineIndex = Array.IndexOf(args, "--timeline");
 if (timelineIndex >= 0)
 {
-    // Prints one row per second of a session: FPS next to CPU and GPU readings.
+    // Prints the findings and one row per second of a session: FPS next to CPU and GPU readings.
     if (timelineIndex + 1 >= args.Length || !long.TryParse(args[timelineIndex + 1], out var sessionId))
     {
         Console.WriteLine("Usage: AIAnalyze --timeline <sessionId>   (list ids with --sessions)");
         return;
     }
 
-    using var timelineStore = new AIAnalyze.Storage.SampleStore(AIAnalyze.Capture.TelemetryPaths.DatabasePath);
-    var session = timelineStore.ListSessions(int.MaxValue).FirstOrDefault(s => s.Id == sessionId);
+    using var timelineStore = new SampleStore(TelemetryPaths.DatabasePath);
+    var session = timelineStore.GetSession(sessionId);
     if (session is null)
     {
         Console.WriteLine($"No session with id {sessionId}.");
         return;
     }
 
-    var seconds = timelineStore.GetSessionSeconds(sessionId);
-    // Pad the window by a second so readings at the edges are included.
-    var readings = timelineStore.GetReadings(session.StartUtc.AddSeconds(-1), session.EndUtc.AddSeconds(1));
-    Console.Write(AIAnalyze.Analysis.SessionTimeline.Format(
-        session, AIAnalyze.Analysis.SessionTimeline.Build(seconds, readings)));
-    if (seconds.Count == 0)
+    var report = SessionReports.Build(timelineStore, session);
+    Console.Write(AIAnalyze.Analysis.SessionTimeline.Format(session, report.Rows, report.Gpu, report.Findings));
+    if (report.Rows.Count == 0)
     {
         Console.WriteLine("No per-second FPS was stored for this session (it was saved before timelines existed).");
     }
     return;
 }
 
-var builder = Host.CreateApplicationBuilder(args);
+// The service's content root must be the install folder, not System32, so the UI files are found.
+var builder = WebApplication.CreateBuilder(new WebApplicationOptions
+{
+    Args = args,
+    ContentRootPath = AppContext.BaseDirectory,
+});
 
 // Local overrides live in ProgramData, which the installer never overwrites. Values here win over appsettings.json.
 builder.Configuration.AddJsonFile(
-    Path.Combine(AIAnalyze.Capture.TelemetryPaths.DataDirectory, "appsettings.json"),
+    Path.Combine(TelemetryPaths.DataDirectory, "appsettings.json"),
     optional: true,
     reloadOnChange: true);
 
@@ -98,10 +115,17 @@ builder.Configuration.AddJsonFile(
 builder.Services.AddWindowsService(options => options.ServiceName = "AIAnalyze");
 builder.Logging.AddEventLog();
 
-builder.Services.Configure<AIAnalyze.Capture.PresentMonOptions>(
-    builder.Configuration.GetSection("PresentMon"));
-builder.Services.AddHostedService<Worker>();
-builder.Services.AddHostedService<AIAnalyze.Capture.FpsMonitorService>();
+// The UI listens on this machine only.
+var port = builder.Configuration.GetValue("Web:Port", 5280);
+builder.WebHost.UseUrls($"http://127.0.0.1:{port}");
 
-var host = builder.Build();
-host.Run();
+builder.Services.Configure<PresentMonOptions>(builder.Configuration.GetSection("PresentMon"));
+builder.Services.AddSingleton<CaptureStatus>();
+builder.Services.AddHostedService<Worker>();
+builder.Services.AddHostedService<FpsMonitorService>();
+
+var app = builder.Build();
+app.UseDefaultFiles();
+app.UseStaticFiles();
+app.MapApi();
+app.Run();

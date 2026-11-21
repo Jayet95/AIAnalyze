@@ -28,4 +28,14 @@ public static class DeviceKinds
 
         return null;
     }
+
+    /// <summary>
+    /// The device part of a sensor identifier: "/gpu-nvidia/0/load/0" gives "/gpu-nvidia/0".
+    /// Two GPUs of different vendors, or two of the same vendor, get different keys.
+    /// </summary>
+    public static string DeviceKey(string sensorId)
+    {
+        var parts = sensorId.Split('/', StringSplitOptions.RemoveEmptyEntries);
+        return parts.Length >= 2 ? $"/{parts[0]}/{parts[1]}" : sensorId;
+    }
 }

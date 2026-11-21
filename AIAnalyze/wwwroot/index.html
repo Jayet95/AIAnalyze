@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>AIAnalyze</title>
+  <link rel="stylesheet" href="app.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <div class="logo" aria-hidden="true">
+        <svg viewBox="0 0 24 24" width="22" height="22"><path d="M3 17l5-6 4 4 5-8 4 5" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </div>
+      <div>
+        <div class="brand-name">AIAnalyze</div>
+        <div class="brand-sub">PC diagnostics</div>
+      </div>
+    </div>
+    <nav class="tabs" role="tablist">
+      <button class="tab active" data-tab="live" role="tab">Live</button>
+      <button class="tab" data-tab="sessions" role="tab">Sessions</button>
+      <button class="tab" data-tab="system" role="tab">System</button>
+    </nav>
+    <div class="status">
+      <span id="capture-pill" class="pill">Connecting…</span>
+      <span id="sample-age" class="muted"></span>
+    </div>
+  </header>
+
+  <main>
+    <section id="tab-live" class="tab-panel active">
+      <div id="capture-banner" class="banner hidden"></div>
+      <div class="cards" id="live-cards"></div>
+      <div class="grid2">
+        <div class="panel">
+          <div class="panel-head"><h2>Temperatures</h2><span class="muted" id="live-gpu"></span></div>
+          <div class="chart" id="live-temp"></div>
+        </div>
+        <div class="panel">
+          <div class="panel-head"><h2>Load</h2><span class="muted">last 5 minutes</span></div>
+          <div class="chart" id="live-load"></div>
+        </div>
+      </div>
+      <div class="panel">
+        <div class="panel-head"><h2>FPS capture</h2></div>
+        <dl class="kv" id="capture-details"></dl>
+      </div>
+    </section>
+
+    <section id="tab-sessions" class="tab-panel">
+      <div class="sessions-layout">
+        <div class="panel session-list-panel">
+          <div class="panel-head"><h2>Sessions</h2><span class="muted" id="session-count"></span></div>
+          <div id="session-list" class="session-list"></div>
+        </div>
+        <div class="panel session-detail" id="session-detail">
+          <div class="empty">Pick a session to see what happened.</div>
+        </div>
+      </div>
+    </section>
+
+    <section id="tab-system" class="tab-panel">
+      <div class="panel">
+        <div class="panel-head"><h2>This PC</h2></div>
+        <div id="specs" class="specs"></div>
+      </div>
+    </section>
+  </main>
+
+  <div id="tooltip" class="tooltip hidden"></div>
+  <script src="app.js"></script>
+</body>
+</html>

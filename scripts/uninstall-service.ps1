@@ -17,3 +17,9 @@ if (Get-Service -Name $serviceName -ErrorAction SilentlyContinue) {
 } else {
     Write-Host "Service '$serviceName' is not installed."
 }
+
+$shortcut = Join-Path $env:ProgramData "Microsoft\Windows\Start Menu\Programs\AIAnalyze.url"
+if (Test-Path $shortcut) {
+    Remove-Item $shortcut -Force
+    Write-Host "Removed the Start menu shortcut."
+}

@@ -50,6 +50,68 @@ public class SessionTimelineTests
     }
 
     [Fact]
+    public void Gpu_columns_come_from_the_busy_discrete_gpu_not_the_first_listed()
+    {
+        var fps = new[] { new FpsSecond(T0.ToUnixTimeSeconds(), 120) };
+        var readings = new[]
+        {
+            // Integrated GPU listed first, idle.
+            Reading(T0, "/gpu-amd/0/load/0", "GPU Core", "Load", 0),
+            Reading(T0, "/gpu-amd/0/clock/0", "GPU Core", "Clock", 600),
+            Reading(T0, "/gpu-amd/0/temperature/1", "GPU VR SoC", "Temperature", 45),
+            // Discrete GPU doing the work.
+            Reading(T0, "/gpu-nvidia/0/load/0", "GPU Core", "Load", 99),
+            Reading(T0, "/gpu-nvidia/0/clock/0", "GPU Core", "Clock", 2700),
+            Reading(T0, "/gpu-nvidia/0/temperature/0", "GPU Core", "Temperature", 74),
+        };
+
+        var row = Assert.Single(SessionTimeline.Build(fps, readings));
+
+        Assert.Equal(99, row.Metrics["GPU %"]);
+        Assert.Equal(2700, row.Metrics["GPU MHz"]);
+        Assert.Equal(74, row.Metrics["GPU °C"]);
+        Assert.Equal("/gpu-nvidia/0", SessionTimeline.SelectGpu(readings)!.DeviceKey);
+    }
+
+    [Fact]
+    public void When_both_gpus_are_idle_the_one_with_more_memory_wins()
+    {
+        var readings = new[]
+        {
+            Reading(T0, "/gpu-amd/0/load/0", "GPU Core", "Load", 2),
+            Reading(T0, "/gpu-amd/0/smalldata/0", "GPU Memory Total", "SmallData", 512),
+            Reading(T0, "/gpu-nvidia/0/load/0", "GPU Core", "Load", 1),
+            Reading(T0, "/gpu-nvidia/0/smalldata/0", "GPU Memory Total", "SmallData", 16303),
+        };
+
+        Assert.Equal("/gpu-nvidia/0", SessionTimeline.SelectGpu(readings)!.DeviceKey);
+    }
+
+    [Fact]
+    public void Integrated_gpu_is_used_when_it_is_the_one_working()
+    {
+        var readings = new[]
+        {
+            Reading(T0, "/gpu-intel/0/load/0", "GPU Core", "Load", 95),
+            Reading(T0, "/gpu-nvidia/0/load/0", "GPU Core", "Load", 0),
+            Reading(T0, "/gpu-nvidia/0/smalldata/0", "GPU Memory Total", "SmallData", 8192),
+        };
+
+        Assert.Equal("/gpu-intel/0", SessionTimeline.SelectGpu(readings)!.DeviceKey);
+    }
+
+    [Fact]
+    public void Amd_cpu_power_named_package_is_read()
+    {
+        var fps = new[] { new FpsSecond(T0.ToUnixTimeSeconds(), 60) };
+        var readings = new[] { Reading(T0, "/amdcpu/0/power/0", "Package", "Power", 35.5) };
+
+        var row = Assert.Single(SessionTimeline.Build(fps, readings));
+
+        Assert.Equal(35.5, row.Metrics["CPU W"]);
+    }
+
+    [Fact]
     public void Missing_metrics_are_null_not_zero()
     {
         var fps = new[] { new FpsSecond(T0.ToUnixTimeSeconds(), 30) };

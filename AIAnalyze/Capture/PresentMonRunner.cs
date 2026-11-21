@@ -6,17 +6,39 @@ namespace AIAnalyze.Capture;
 /// <summary>Settings for the PresentMon child process, bound from the "PresentMon" config section.</summary>
 public sealed class PresentMonOptions
 {
-    /// <summary>Full path to PresentMon.exe. Empty means FPS capture is disabled.</summary>
+    /// <summary>Arguments known to work with PresentMon 2.x: CSV with 1.x column names on stdout.</summary>
+    public const string DefaultArguments =
+        "--output_stdout --no_console_stats --v1_metrics --session_name AIAnalyze --stop_existing_session";
+
+    /// <summary>
+    /// Full path to PresentMon.exe. Empty means: use PresentMon\PresentMon.exe next to the app if it
+    /// exists, otherwise FPS capture is disabled.
+    /// </summary>
     public string ExecutablePath { get; set; } = "";
 
-    /// <summary>Command-line arguments. Check them against the installed PresentMon version's --help.</summary>
+    /// <summary>Command-line arguments. Empty means <see cref="DefaultArguments"/>.</summary>
     public string Arguments { get; set; } = "";
 
     /// <summary>
     /// Start PresentMon in the logged-on user's session (needs the service to run as LocalSystem).
     /// Needed because services run in session 0, where PresentMon receives no present events.
+    /// Only applies when running as a service.
     /// </summary>
-    public bool UserSession { get; set; }
+    public bool UserSession { get; set; } = true;
+
+    /// <summary>The settings with defaults filled in, so a fresh install needs no configuration.</summary>
+    public PresentMonOptions Resolved(bool runningAsService)
+    {
+        var bundled = Path.Combine(AppContext.BaseDirectory, "PresentMon", "PresentMon.exe");
+        return new PresentMonOptions
+        {
+            ExecutablePath = !string.IsNullOrWhiteSpace(ExecutablePath)
+                ? ExecutablePath
+                : File.Exists(bundled) ? bundled : "",
+            Arguments = string.IsNullOrWhiteSpace(Arguments) ? DefaultArguments : Arguments,
+            UserSession = UserSession && runningAsService,
+        };
+    }
 }
 
 /// <summary>
