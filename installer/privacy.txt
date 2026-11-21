@@ -1,0 +1,17 @@
+What AIAnalyze does on your PC
+
+AIAnalyze runs in the background as a Windows service. It checks your PC's health every 10 minutes (crashes, hardware errors, drivers, disks, memory, updates, battery), reads CPU and GPU temperatures, loads, fans and RAM details, and records FPS while you play. You see everything at http://127.0.0.1:5280/, which only this PC can open.
+
+What stays on your PC
+
+All measurements are stored on this PC in C:\ProgramData\AIAnalyze, with limits: sensor readings for 2 days, alerts and per-second FPS for 30 days. The uninstaller asks whether to delete them.
+
+What can leave your PC, only if you choose
+
+- Assistant questions: when you ask the assistant something, your question goes to Claude together with a summary of this PC's measurements, so it can answer about your PC.
+- Anonymous diagnostics: off until you turn it on. Once a day it sends hardware models, driver versions, Windows build, which checks failed, which finding types appeared, game file names and FPS, and your Helpful / Not helpful votes. Never names of your files, folders or other programs, never Event Log text, never chat content. Settings shows exactly what would be sent.
+- Signing in is optional. It opens your browser; AIAnalyze never sees your password.
+
+What AIAnalyze never does
+
+It only reads information. It does not change settings, install drivers, or delete anything on your PC.

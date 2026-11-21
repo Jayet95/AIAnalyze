@@ -14,6 +14,18 @@ Everything stays on the PC. The UI is a local web page served by the service on 
 
 ## Install
 
+**For users:** run `AIAnalyze-Setup-<version>.exe`. The wizard shows what the app does with data, installs it as a background service, adds an **AIAnalyze** Start menu shortcut, and opens it at the end. It needs no .NET or other tools, and it appears in Apps & features with a normal uninstall, which asks whether to delete the collected data.
+
+**Building the installer** (on a build machine with the .NET 10 SDK, Node.js LTS and [Inno Setup 6](https://jrsoftware.org/isdl.php)):
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\build-installer.ps1 -PresentMonPath C:\Path\To\PresentMon.exe
+```
+
+It publishes the app self-contained, builds the UI from `ui/`, bundles PresentMon if given, and writes `dist\AIAnalyze-Setup-<version>.exe`. The version comes from `<Version>` in `AIAnalyze.csproj`. Sign the exe before publishing it (see the antivirus notes). PresentMon is MIT-licensed; include its license notice when you distribute it.
+
+**For development**, the script below installs from the source instead.
+
 You need the .NET 10 SDK to build. Optional, for full data:
 
 - **PresentMon** for FPS capture: download `PresentMon.exe` from the official PresentMon GitHub releases.
