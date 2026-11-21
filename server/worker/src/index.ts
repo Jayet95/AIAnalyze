@@ -14,6 +14,8 @@ export interface Env {
   OIDC_CLIENT_ID?: string;
   MODEL: string;
   DAILY_FREE_QUESTIONS: string;
+  /** Website origin allowed to read /v1/me from the browser, for example https://aianalyze.app. */
+  SITE_ORIGIN?: string;
 }
 
 const MAX_MESSAGES = 20;
@@ -50,14 +52,18 @@ export default {
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const url = new URL(request.url);
     try {
-      if (request.method === "GET" && url.pathname === "/v1/me") return await me(request, env);
+      // The website reads the signed-in user's quota from the browser; only its origin is allowed, only for /v1/me.
+      if (url.pathname === "/v1/me" && request.method === "OPTIONS") return withCors(new Response(null, { status: 204 }), request, env);
+      if (request.method === "GET" && url.pathname === "/v1/me") return withCors(await me(request, env), request, env);
       if (request.method === "POST" && url.pathname === "/v1/chat") return await chat(request, env);
       if (request.method === "POST" && url.pathname === "/v1/telemetry") return await telemetry(request, env);
       return json({ error: "Not found." }, 404);
     } catch (err) {
-      if (err instanceof HttpError) return json({ error: err.message }, err.status);
+      // Errors on /v1/me carry CORS headers too, so the website can show "sign in again" instead of a blocked request.
+      const cors = (r: Response) => (url.pathname === "/v1/me" ? withCors(r, request, env) : r);
+      if (err instanceof HttpError) return cors(json({ error: err.message }, err.status));
       console.error(err);
-      return json({ error: "Something went wrong on the server." }, 500);
+      return cors(json({ error: "Something went wrong on the server." }, 500));
     }
   },
 
@@ -227,8 +233,9 @@ async function verifyToken(token: string, env: Env): Promise<string> {
     const { payload } = await jwtVerify(token, jwks!, { issuer: doc.issuer }).catch(() => {
       throw new HttpError(401, "Your sign-in has expired. Sign in again.");
     });
+    // Desktop tokens name the OAuth client; website session tokens name the site's origin in azp.
     const client = (payload.azp ?? payload.client_id) as string | undefined;
-    if (env.OIDC_CLIENT_ID && client && client !== env.OIDC_CLIENT_ID) {
+    if (env.OIDC_CLIENT_ID && client && client !== env.OIDC_CLIENT_ID && client !== env.SITE_ORIGIN) {
       throw new HttpError(401, "This token was issued to a different app.");
     }
     if (!payload.sub) throw new HttpError(401, "The token has no user.");
@@ -311,6 +318,19 @@ function dailyLimit(env: Env): number {
 
 function today(): string {
   return new Date().toISOString().slice(0, 10);
+}
+
+/** Adds CORS headers when the request comes from the configured website origin; other origins get none. */
+function withCors(response: Response, request: Request, env: Env): Response {
+  const origin = request.headers.get("Origin");
+  if (!env.SITE_ORIGIN || origin !== env.SITE_ORIGIN) return response;
+  const headers = new Headers(response.headers);
+  headers.set("Access-Control-Allow-Origin", origin);
+  headers.set("Access-Control-Allow-Methods", "GET, OPTIONS");
+  headers.set("Access-Control-Allow-Headers", "Authorization");
+  headers.set("Access-Control-Max-Age", "600");
+  headers.set("Vary", "Origin");
+  return new Response(response.body, { status: response.status, headers });
 }
 
 function json(body: unknown, status = 200): Response {

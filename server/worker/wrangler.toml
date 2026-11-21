@@ -9,6 +9,8 @@ compatibility_flags = ["nodejs_compat"]
 OIDC_ISSUER = ""
 # Optional: the OAuth client ID of the desktop app; when set, tokens issued to other clients are rejected.
 OIDC_CLIENT_ID = ""
+# Website allowed to read the signed-in user's quota from the browser, for example https://aianalyze.app
+SITE_ORIGIN = ""
 MODEL = "claude-opus-5-5"
 DAILY_FREE_QUESTIONS = "30"
 

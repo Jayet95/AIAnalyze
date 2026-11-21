@@ -75,6 +75,15 @@ if ($PresentMonPath) {
 if ($LASTEXITCODE -ne 0) { throw "Inno Setup failed." }
 
 $setup = Join-Path $repoRoot "dist\AIAnalyze-Setup-$version.exe"
+
+# A copy with a fixed name, so the website can link to the newest release:
+#   https://github.com/Jayet95/AIAnalyze/releases/latest/download/AIAnalyze-Setup.exe
+$latest = Join-Path $repoRoot "dist\AIAnalyze-Setup.exe"
+Copy-Item $setup $latest -Force
+$hash = (Get-FileHash $setup -Algorithm SHA256).Hash
+Set-Content (Join-Path $repoRoot "dist\SHA256SUMS.txt") "$hash  AIAnalyze-Setup-$version.exe`n$hash  AIAnalyze-Setup.exe" -Encoding ascii
+
 Write-Host ""
 Write-Host "Installer ready: $setup"
+Write-Host "Upload both exe files and SHA256SUMS.txt to a GitHub release (tag v$version)."
 Write-Host "Sign it before publishing (signtool sign /fd SHA256 ...), so Windows and antivirus software trust it."
