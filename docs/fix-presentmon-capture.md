@@ -552,3 +552,45 @@ Not verified: whether FurMark was V-Synced in windowed mode and PresentMon repor
 - Visual checks of Health, Cooling and Memory pages (screenshots), sharing banner, Helpful / Not helpful buttons. I can only read the API from the terminal; the user can look at the pages.
 - Step 7 (assistant with an API key): no key available yet.
 - Quiet wait with no signed-in user.
+
+## Round 13: test of `85b9155` (window app, UI build, FurMark attribution)
+
+First computer, same hardware as before. Reinstalled elevated with `install-service.ps1 -NoBrowser`.
+
+### What works
+
+- **FurMark attribution (Round 12 item 27) is fixed.** While FurMark ran, `/api/status` `capture.applications` listed `furmark.exe` (about 253 FPS live, not excluded), and `msedge.exe`, `msedgewebview2.exe`, `dwm.exe`, `Code.exe` as `excluded: true`. The saved session is id 261: `furmark.exe`, 91 s, 48,112 frames, median 537.1 FPS, RTX 5080 99% busy, GpuBound finding, **no false Stutter finding** (Round 11 item 23 looks fixed as well).
+- **Window app:** `AIAnalyze.Desktop.exe` started from `C:\Program Files\AIAnalyze\desktop`, `desktop.log` shows `WebView2 157.0.4341.60 ready; opening http://127.0.0.1:5280/`, and the Start menu has `AIAnalyze.lnk`. Not checked by me: the tray icon menu and the Windows notification (needs a person looking at the screen).
+- Defender found nothing; the service runs; the new UI is served (`AIAnalyze — PC Health`).
+
+### 28. `build-ui.ps1` cannot run npm: cmd quoting (must fix)
+
+The install ended with `THE NEW UI WAS NOT INSTALLED`. The install log shows:
+
+```
+Error: Cannot find module 'C:\Users\jayet\Documents\AIAnalyze\ui\node_modules\npm\bin\npm-prefix.js'
+```
+
+Cause: `Invoke-Step` runs `cmd.exe /c "npm" install ... > "log" 2>&1`. When the command line after `/c` starts with a quote and has more than two quotes, cmd strips the first and last quote and the command is mangled; npm's shim then looks for itself in the current folder (`ui\node_modules\npm`). Both the first try and the retry fail the same way, so the clean retry does not help.
+I reproduced it in PowerShell 5.1 from the `ui` folder:
+
+```powershell
+$line  = "`"npm`" install --no-audit --no-fund > `"$log`" 2>&1"
+cmd.exe /c $line        # exit 1, the error above
+$line2 = "`"npm install --no-audit --no-fund > `"$log`" 2>&1`""
+cmd.exe /c $line2       # exit 0, "added 531 packages"
+```
+
+Fix: wrap the whole command in one more pair of quotes (`cmd.exe /c "`"$line`""`), or build the string as `cmd /d /s /c "..."` (`/s` makes the quote handling predictable).
+After that I built by hand (`npm run build:local` worked) and copied `ui\dist-local` to `C:\Program Files\AIAnalyze\wwwroot` to continue testing.
+The new `tests` do not cover `build-ui.ps1`; a small Pester or script test that runs it against a tiny package would have caught this.
+
+### 29. `Surfshark.exe` is not excluded and makes junk sessions (should fix)
+
+`/api/status` lists `Surfshark.exe` as `excluded: false` at about 110–130 FPS. The sessions list now has 260+ entries; the newest 100 contain 98 `Surfshark.exe` sessions of 0.016 s to 24 s (one had 2,043 frames in 0.016 s) and one `Code.exe`. Those saved before the reinstall may predate the exclusion list, but Surfshark is a VPN client with a small overlay window, not a game.
+Suggested: instead of a name list only, require a minimum duration (for example 20 s) before a session is saved, and consider excluding overlay-style presenters by a heuristic (window not full-screen, or no GPU load share). Also add `Surfshark.exe` (and other VPN or launcher clients) to the exclusion list.
+Cleanup: `--delete-sessions` can remove the junk by time range, but a `--delete-sessions-by-app <name>` option would be easier.
+
+### Not tested
+
+Tray menu, Windows notification, Start with Windows, the assistant with an API key (no key), the visual pages.
