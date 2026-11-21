@@ -31,6 +31,8 @@ public static class ApiEndpoints
                     userSession = capture.UserSessionMode,
                     lastFrameUtc = capture.LastFrameUtc,
                     currentApplication = capture.CurrentApplication,
+                    // Every program presenting right now, with FPS; excluded ones (browsers, launchers) never become sessions.
+                    applications = capture.Applications,
                     lastSessionUtc = capture.LastSessionUtc,
                 },
                 database = new

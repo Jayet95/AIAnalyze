@@ -27,9 +27,6 @@ public sealed class FpsMonitorService(
     // Shorter sessions are noise (a window flashing, a quick alt-tab) and are not saved.
     private const int MinFrames = 300;
 
-    // Compositor and system presenters that are never a game.
-    private static readonly string[] ExcludedApps = ["dwm.exe"];
-
     // Wait before restarting PresentMon, so a broken setup does not spin.
     private static readonly TimeSpan RestartDelay = TimeSpan.FromSeconds(30);
 
@@ -51,7 +48,9 @@ public sealed class FpsMonitorService(
 
         var etwSession = EtwSessions.SessionNameFrom(settings.Arguments);
         using var store = new SampleStore(TelemetryPaths.DatabasePath);
-        var tracker = new SessionTracker(IdleGap, MinFrames, ExcludedApps);
+        // Browsers, launchers, chat apps and the compositor present frames too; they never become sessions.
+        var excluded = new HashSet<string>(settings.EffectiveExclusions, StringComparer.OrdinalIgnoreCase);
+        var tracker = new SessionTracker(IdleGap, MinFrames, excluded);
 
         // The tracker and the store are shared by the frame reader and the idle timer.
         var gate = new object();
@@ -111,7 +110,7 @@ public sealed class FpsMonitorService(
                         }
 
                         var now = DateTimeOffset.UtcNow;
-                        status.FrameSeen(frame.Application, now);
+                        status.FrameSeen(frame.Application, now, excluded.Contains(frame.Application));
                         lock (gate)
                         {
                             foreach (var closed in tracker.AddFrame(frame, now))

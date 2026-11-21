@@ -26,6 +26,36 @@ public sealed class PresentMonOptions
     /// </summary>
     public bool UserSession { get; set; } = true;
 
+    /// <summary>
+    /// Programs that present frames but are not games, so they never become sessions: the compositor, browsers
+    /// (a page with animations presents at the monitor's refresh rate), editors, launchers, chat and overlays.
+    /// </summary>
+    public static readonly string[] DefaultExcludedApplications =
+    [
+        "dwm.exe", "explorer.exe", "searchhost.exe", "shellexperiencehost.exe", "startmenuexperiencehost.exe",
+        "textinputhost.exe", "applicationframehost.exe", "lockapp.exe",
+        "msedge.exe", "msedgewebview2.exe", "chrome.exe", "firefox.exe", "brave.exe", "opera.exe", "vivaldi.exe",
+        "code.exe", "cursor.exe", "devenv.exe", "notepad.exe",
+        "steamwebhelper.exe", "steam.exe", "epicgameslauncher.exe", "battle.net.exe", "galaxyclient.exe", "eadesktop.exe",
+        "discord.exe", "teams.exe", "ms-teams.exe", "slack.exe", "spotify.exe", "whatsapp.exe",
+        "obs64.exe", "nvidia overlay.exe", "nvcontainer.exe", "radeonsoftware.exe", "aianalyze.desktop.exe",
+    ];
+
+    /// <summary>When true (default), <see cref="DefaultExcludedApplications"/> are ignored.</summary>
+    public bool UseDefaultExclusions { get; set; } = true;
+
+    /// <summary>More programs to ignore, by executable name (for example "myrecorder.exe").</summary>
+    public string[] ExcludedApplications { get; set; } = [];
+
+    /// <summary>The programs that never become sessions, after defaults and configuration.</summary>
+    public IReadOnlyList<string> EffectiveExclusions =>
+        (UseDefaultExclusions ? DefaultExcludedApplications : ["dwm.exe"])
+            .Concat(ExcludedApplications ?? [])
+            .Select(a => a.Trim().ToLowerInvariant())
+            .Where(a => a.Length > 0)
+            .Distinct()
+            .ToList();
+
     /// <summary>The settings with defaults filled in, so a fresh install needs no configuration.</summary>
     public PresentMonOptions Resolved(bool runningAsService)
     {
@@ -37,6 +67,8 @@ public sealed class PresentMonOptions
                 : File.Exists(bundled) ? bundled : "",
             Arguments = string.IsNullOrWhiteSpace(Arguments) ? DefaultArguments : Arguments,
             UserSession = UserSession && runningAsService,
+            UseDefaultExclusions = UseDefaultExclusions,
+            ExcludedApplications = ExcludedApplications ?? [],
         };
     }
 }

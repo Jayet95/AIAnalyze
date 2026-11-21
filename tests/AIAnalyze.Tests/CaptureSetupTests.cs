@@ -33,6 +33,41 @@ public class CaptureSetupTests
     }
 
     [Fact]
+    public void Browsers_and_launchers_are_excluded_by_default_and_more_can_be_added()
+    {
+        var defaults = new PresentMonOptions().EffectiveExclusions;
+        Assert.Contains("msedge.exe", defaults);
+        Assert.Contains("steamwebhelper.exe", defaults);
+        Assert.Contains("dwm.exe", defaults);
+        Assert.DoesNotContain("cyberpunk2077.exe", defaults);
+
+        var custom = new PresentMonOptions { UseDefaultExclusions = false, ExcludedApplications = ["MyRecorder.exe"] }.EffectiveExclusions;
+        Assert.Equal(["dwm.exe", "myrecorder.exe"], custom);
+    }
+
+    [Fact]
+    public void Capture_status_reports_each_presenting_program_and_the_current_game()
+    {
+        var status = new CaptureStatus();
+        var start = DateTimeOffset.UtcNow.AddSeconds(-6);
+
+        // 6 seconds of a game at 60 FPS while a browser tab presents at 144 FPS, in time order as PresentMon reports them.
+        var frames = Enumerable.Range(0, 361).Select(i => (At: i * 1000.0 / 60, App: "furmark.exe", Excluded: false))
+            .Concat(Enumerable.Range(0, 865).Select(i => (At: i * 1000.0 / 144, App: "msedge.exe", Excluded: true)))
+            .OrderBy(f => f.At);
+        foreach (var f in frames)
+        {
+            status.FrameSeen(f.App, start.AddMilliseconds(f.At), f.Excluded);
+        }
+
+        var apps = status.Applications;
+        Assert.Equal(2, apps.Count);
+        Assert.True(apps.Single(a => a.Name == "msedge.exe").Excluded);
+        Assert.InRange(apps.Single(a => a.Name == "furmark.exe").Fps, 50, 70);
+        Assert.Equal("furmark.exe", status.CurrentApplication);
+    }
+
+    [Fact]
     public void Explicit_settings_are_kept()
     {
         var resolved = new PresentMonOptions { ExecutablePath = @"C:\pm.exe", Arguments = "--x" }.Resolved(true);

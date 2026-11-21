@@ -41,23 +41,14 @@ $uiDir = Join-Path $repoRoot "ui"
 if (Get-Command git -ErrorAction SilentlyContinue) {
     git -C $repoRoot submodule update --init ui
 }
-if ((Test-Path (Join-Path $uiDir "package.json")) -and (Get-Command npm -ErrorAction SilentlyContinue)) {
-    Push-Location $uiDir
-    try {
-        npm install --no-audit --no-fund
-        if ($LASTEXITCODE -ne 0) { throw "npm install failed." }
-        npm run build:local
-        if ($LASTEXITCODE -ne 0) { throw "The UI build failed." }
-    } finally {
-        Pop-Location
-    }
+if ((& (Join-Path $PSScriptRoot "build-ui.ps1") -UiDir $uiDir) -eq $true) {
     $web = Join-Path $app "wwwroot"
     Remove-Item -Recurse -Force $web
     New-Item -ItemType Directory $web | Out-Null
     Copy-Item (Join-Path $uiDir "dist-local\*") $web -Recurse -Force
     Write-Host "Packaged the new UI."
 } else {
-    Write-Warning "Node.js or the ui/ submodule is missing; packaging the built-in UI."
+    Write-Warning "The new UI could not be built (see above); packaging the built-in UI."
 }
 
 # 3. Optional PresentMon, which the service finds in the PresentMon folder next to it.

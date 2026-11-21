@@ -129,27 +129,15 @@ if (-not $SkipUiBuild -and (Get-Command git -ErrorAction SilentlyContinue)) {
     if ($LASTEXITCODE -ne 0) { Write-Warning "Could not fetch the UI from its repository." }
 }
 if (-not $SkipUiBuild -and (Test-Path (Join-Path $uiDir "package.json"))) {
-    if (Get-Command npm -ErrorAction SilentlyContinue) {
-        Write-Host "Building the UI from $uiDir..."
-        Push-Location $uiDir
-        try {
-            npm install --no-audit --no-fund
-            if ($LASTEXITCODE -ne 0) { throw "npm install failed" }
-            npm run build:local
-            if ($LASTEXITCODE -ne 0) { throw "the UI build failed" }
-
-            $web = Join-Path $InstallDir "wwwroot"
-            Remove-Item -Recurse -Force $web -ErrorAction SilentlyContinue
-            New-Item -ItemType Directory $web | Out-Null
-            Copy-Item (Join-Path $uiDir "dist-local\*") $web -Recurse -Force
-            Write-Host "Installed the new UI."
-        } catch {
-            Write-Warning "Could not build the UI ($($_.Exception.Message)). The built-in UI is used instead."
-        } finally {
-            Pop-Location
-        }
+    $built = & (Join-Path $PSScriptRoot "build-ui.ps1") -UiDir $uiDir
+    if ($built -eq $true) {
+        $web = Join-Path $InstallDir "wwwroot"
+        Remove-Item -Recurse -Force $web -ErrorAction SilentlyContinue
+        New-Item -ItemType Directory $web | Out-Null
+        Copy-Item (Join-Path $uiDir "dist-local\*") $web -Recurse -Force
+        Write-Host "Installed the new UI."
     } else {
-        Write-Warning "Node.js is not installed, so the built-in UI is used. Install Node.js LTS and rerun to get the new UI."
+        Write-Warning "THE NEW UI WAS NOT INSTALLED; the built-in UI is used. See the reason above."
     }
 }
 
