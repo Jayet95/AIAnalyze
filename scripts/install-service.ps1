@@ -32,7 +32,10 @@ param(
     [switch]$SkipScan,
 
     # Keep the built-in UI instead of building the one in ui/ (needs Node.js).
-    [switch]$SkipUiBuild
+    [switch]$SkipUiBuild,
+
+    # Build the newest UI from the AIAnalyze-UI repository instead of the version this repo points to.
+    [switch]$LatestUi
 )
 
 $ErrorActionPreference = "Stop"
@@ -114,8 +117,17 @@ if ($SetApiKey) {
     Write-Host "Stored the API key in $secretsPath (readable only by SYSTEM and Administrators)."
 }
 
-# The UI in ui/ (built in Lovable) replaces the built-in one when Node.js is available.
+# The UI (built in Lovable) lives in the AIAnalyze-UI repository, linked here as the ui/ submodule. It replaces
+# the built-in UI when Node.js is available.
 $uiDir = Join-Path $repoRoot "ui"
+if (-not $SkipUiBuild -and (Get-Command git -ErrorAction SilentlyContinue)) {
+    if ($LatestUi) {
+        git -C $repoRoot submodule update --init --remote ui
+    } elseif (-not (Test-Path (Join-Path $uiDir "package.json"))) {
+        git -C $repoRoot submodule update --init ui
+    }
+    if ($LASTEXITCODE -ne 0) { Write-Warning "Could not fetch the UI from its repository." }
+}
 if (-not $SkipUiBuild -and (Test-Path (Join-Path $uiDir "package.json"))) {
     if (Get-Command npm -ErrorAction SilentlyContinue) {
         Write-Host "Building the UI from $uiDir..."

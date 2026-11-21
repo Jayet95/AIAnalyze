@@ -154,15 +154,23 @@ dotnet "C:\Program Files\AIAnalyze\AIAnalyze.dll" --health
 
 A brief for building a new UI (for example in Lovable), with the full API contract and sample data, is in [docs/ui-brief-for-lovable.md](docs/ui-brief-for-lovable.md).
 
-The UI built in Lovable lives in `ui/`. To build it by hand:
+The UI built in Lovable lives in its own repository, [AIAnalyze-UI](https://github.com/Jayet95/AIAnalyze-UI), linked here as the `ui/` submodule at a fixed version. Clone with the UI included:
 
 ```powershell
-cd ui
-npm install
-npm run build:local
+git clone --recurse-submodules https://github.com/Jayet95/AIAnalyze.git
 ```
 
-Then copy the contents of `ui/dist-local` into `AIAnalyze/wwwroot` (or let the installer do it). `?mock=1` in the URL shows it with sample data. To update it from Lovable, download the project again and replace the contents of `ui/`, keeping `node_modules` out of git. The simpler UI in `AIAnalyze/wwwroot` stays as the fallback.
+In an existing clone, `git submodule update --init ui` fetches it. The installer does this on its own, and `-LatestUi` makes it build the newest UI instead of the pinned version.
+
+To move the pinned version forward after changes in AIAnalyze-UI:
+
+```powershell
+git submodule update --remote ui
+git add ui
+git commit -m "Update UI"
+```
+
+To build the UI by hand: `cd ui`, `npm install`, `npm run build:local`, then copy the contents of `ui/dist-local` into `AIAnalyze/wwwroot`. `?mock=1` in the URL shows it with sample data. The simpler UI in `AIAnalyze/wwwroot` stays as the fallback.
 
 
 ```powershell
