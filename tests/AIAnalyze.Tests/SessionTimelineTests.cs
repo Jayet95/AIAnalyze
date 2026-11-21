@@ -15,17 +15,35 @@ public class SessionTimelineTests
     public void Session_tracker_counts_frames_per_second()
     {
         var tracker = new SessionTracker(TimeSpan.FromSeconds(30));
-        var frame = new FrameRecord("game.exe", 0, 16.6);
 
-        tracker.AddFrame(frame, T0);
-        tracker.AddFrame(frame, T0.AddMilliseconds(400));
-        tracker.AddFrame(frame, T0.AddMilliseconds(900));
-        tracker.AddFrame(frame, T0.AddSeconds(1));
+        // PresentMon timestamps 10.0, 10.4, 10.9 and 11.0 s: three frames in the first second, one in the next.
+        tracker.AddFrame(new FrameRecord("game.exe", 10.0, 16.6), T0);
+        tracker.AddFrame(new FrameRecord("game.exe", 10.4, 16.6), T0.AddMilliseconds(400));
+        tracker.AddFrame(new FrameRecord("game.exe", 10.9, 16.6), T0.AddMilliseconds(900));
+        tracker.AddFrame(new FrameRecord("game.exe", 11.0, 16.6), T0.AddSeconds(1));
         var session = Assert.Single(tracker.Finish());
 
         Assert.Equal(2, session.Seconds.Count);
         Assert.Equal(3, session.Seconds[0].Frames);
         Assert.Equal(1, session.Seconds[1].Frames);
+    }
+
+    [Fact]
+    public void Bursty_arrival_does_not_change_per_second_fps()
+    {
+        var tracker = new SessionTracker(TimeSpan.FromSeconds(30));
+
+        // 100 frames per second by PresentMon's clock, but the lines arrive in one burst per 1.5 s.
+        for (var i = 0; i < 300; i++)
+        {
+            var frameTime = i / 100.0;
+            var arrival = T0.AddMilliseconds(Math.Floor(frameTime / 1.5) * 1500);
+            tracker.AddFrame(new FrameRecord("game.exe", frameTime, 10), arrival);
+        }
+        var session = Assert.Single(tracker.Finish());
+
+        Assert.Equal(3, session.Seconds.Count);
+        Assert.All(session.Seconds, s => Assert.Equal(100, s.Frames));
     }
 
     [Fact]

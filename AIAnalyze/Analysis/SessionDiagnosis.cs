@@ -28,12 +28,16 @@ public static class SessionDiagnosis
         DeviationResult? deviation = null)
     {
         var findings = new List<SessionFinding>();
-        if (rows.Count < MinSeconds)
+
+        // The first and last seconds hold only part of a second of frames, so their FPS is low by
+        // construction. Leave them out of every FPS-based rule.
+        var core = rows.Count > 2 ? rows.Skip(1).Take(rows.Count - 2).ToList() : rows.ToList();
+        if (core.Count < MinSeconds)
         {
             return findings;
         }
 
-        var fps = rows.Select(r => (double)r.Fps).ToList();
+        var fps = core.Select(r => (double)r.Fps).ToList();
         var medianFps = Stats.Median(fps);
         var gpuLoad = Column(rows, SessionTimeline.GpuLoad);
         var cpuLoad = Column(rows, SessionTimeline.CpuLoad);

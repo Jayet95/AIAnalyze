@@ -96,14 +96,33 @@ public sealed class SessionTracker(TimeSpan idleGap, int minFrames = 1, IEnumera
         private readonly SortedDictionary<long, int> _framesPerSecond = [];
         private readonly DateTimeOffset _start = start;
 
+        // Maps PresentMon's frame clock (seconds since capture start) to wall-clock time.
+        private long _anchorWallMs;
+        private double _anchorFrameSeconds = double.NaN;
+
         public DateTimeOffset Last { get; private set; } = start;
 
+        /// <summary>
+        /// Counts the frame in the wall-clock second given by its own PresentMon timestamp, not by
+        /// when its line arrived. PresentMon's output arrives in bursts, so arrival time would turn a
+        /// steady 550 FPS into alternating 680 and 430.
+        /// </summary>
         public void Add(FrameRecord frame, DateTimeOffset now)
         {
             _frames.Add(frame);
             Last = now;
-            var second = now.ToUnixTimeSeconds();
-            _framesPerSecond[second] = _framesPerSecond.GetValueOrDefault(second) + 1;
+
+            // Anchor on the first frame; re-anchor if PresentMon's clock goes backwards (a restart).
+            if (double.IsNaN(_anchorFrameSeconds) || frame.TimeSeconds < _anchorFrameSeconds)
+            {
+                _anchorWallMs = now.ToUnixTimeMilliseconds();
+                _anchorFrameSeconds = frame.TimeSeconds;
+            }
+
+            var wallMs = _anchorWallMs + (long)((frame.TimeSeconds - _anchorFrameSeconds) * 1000);
+            var second = Math.Floor(wallMs / 1000.0);
+            var key = (long)second;
+            _framesPerSecond[key] = _framesPerSecond.GetValueOrDefault(key) + 1;
         }
 
         public CompletedSession? ToCompleted()

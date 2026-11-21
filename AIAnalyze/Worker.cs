@@ -4,8 +4,8 @@ using AIAnalyze.Storage;
 namespace AIAnalyze;
 
 /// <summary>
-/// Samples CPU/GPU sensors once per second and stores them locally.
-/// Phase 0: collection only, no diagnosis yet.
+/// Samples CPU/GPU sensors once per second, stores them locally, and logs temperature warnings.
+/// Key sensors are stored every second and all sensors every few seconds (see <see cref="SampleSelection"/>).
 /// </summary>
 public class Worker(ILogger<Worker> logger) : BackgroundService
 {
@@ -34,6 +34,7 @@ public class Worker(ILogger<Worker> logger) : BackgroundService
 
         var nextCleanup = DateTimeOffset.UtcNow;
         var lastLogged = new Dictionary<string, DateTimeOffset>();
+        long tick = 0;
         using var timer = new PeriodicTimer(SampleInterval);
 
         while (await timer.WaitForNextTickAsync(stoppingToken))
@@ -42,12 +43,14 @@ public class Worker(ILogger<Worker> logger) : BackgroundService
             {
                 var now = DateTimeOffset.UtcNow;
                 var samples = reader.ReadOnce();
-                store.WriteTick(now, samples);
+                store.WriteTick(now, SampleSelection.ForTick(samples, tick++));
                 LogThermalFindings(samples, now, lastLogged);
 
                 if (now >= nextCleanup)
                 {
                     var removed = store.DeleteOlderThan(Retention);
+                    // Fold the write-ahead log back into the database so it does not keep growing.
+                    store.Checkpoint();
                     logger.LogDebug("Retention cleanup removed {Count} rows", removed);
                     nextCleanup = now.Add(CleanupInterval);
                 }

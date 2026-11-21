@@ -110,6 +110,15 @@ public class SessionDiagnosisTests
     }
 
     [Fact]
+    public void Partial_first_and_last_seconds_are_not_stutter()
+    {
+        // Steady 500 FPS; the session starts and ends part-way into a second.
+        var rows = Rows(61, i => Row(i, i == 0 || i == 60 ? 100 : 500, gpuLoad: 99));
+
+        Assert.DoesNotContain("Stutter", Kinds(SessionDiagnosis.Diagnose(rows, Limits)));
+    }
+
+    [Fact]
     public void Rare_drops_are_not_stutter()
     {
         var rows = Rows(100, i => Row(i, i == 50 ? 30 : 120));

@@ -440,5 +440,16 @@ public sealed class SampleStore : IDisposable
         return cmd.ExecuteNonQuery();
     }
 
+    /// <summary>
+    /// Copies the write-ahead log into the database and truncates it. Freed pages from deleted rows are
+    /// reused by new rows, so the database file stays at about the size of the retention window.
+    /// </summary>
+    public void Checkpoint()
+    {
+        using var cmd = _connection.CreateCommand();
+        cmd.CommandText = "PRAGMA wal_checkpoint(TRUNCATE);";
+        cmd.ExecuteNonQuery();
+    }
+
     public void Dispose() => _connection.Dispose();
 }
