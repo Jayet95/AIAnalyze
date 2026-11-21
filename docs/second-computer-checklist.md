@@ -1,74 +1,78 @@
 # Second computer: checklist
 
-This build adds the local UI, session findings, the fixes from Rounds 10 and 11 (GPU choice, AMD CPU power, waiting for sign-in, false stutter, Event Log noise, database size), automatic cleanup of stale ETW trace sessions, alerts, and the assistant (chat and automatic feedback). Commands run in PowerShell. Steps marked **Administrator** need an elevated window.
+This round tests the current build: the new UI from Lovable, whole-PC health checks, cooling and RAM details, the opt-in sharing banner and feedback buttons. Sign-in is not set up yet (it waits for Clerk), so the account button opens Settings only.
 
-## 1. Pull the latest code
+Commands run in PowerShell. Steps marked **Administrator** need an elevated window. Do not paste any API key into a chat or a file.
+
+## 1. Prerequisites
+
+- **Node.js LTS** (needed to build the new UI). Check with `node --version`. If it is missing, install it from nodejs.org. Without it, the installer keeps the old built-in UI.
+- **PawnIO** driver (CPU temperature, power, and motherboard fans). Check with `Get-Service PawnIO`. It is already installed on the first computer.
+- PresentMon stays where it is (`C:\Program Files\AIAnalyze\PresentMon`).
+
+## 2. Get the latest code, including the UI
+
+The UI is now a separate repository linked as a submodule, so a plain `git pull` is not enough:
 
 ```powershell
 git pull
+git submodule update --init ui
 ```
 
-## 2. Reinstall (Administrator)
-
-PresentMon is already in `C:\Program Files\AIAnalyze\PresentMon` on the first computer, and the reinstall keeps it:
+## 3. Reinstall (Administrator)
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File scripts\install-service.ps1
 ```
 
-On a new computer, add the path to PresentMon the first time:
+Watch the output for:
 
-```powershell
-powershell -ExecutionPolicy Bypass -File scripts\install-service.ps1 -PresentMonPath C:\Path\To\PresentMon.exe
-```
+- `Building the UI from ...` then `Installed the new UI.` (or a warning that the built-in UI is used).
+- `Microsoft Defender found nothing in C:\Program Files\AIAnalyze.` (or a list of detections, which must not be excluded).
+- No warning about PawnIO.
 
-The service must run as LocalSystem, which is the default. The script opens the UI when it finishes.
+The UI opens in the browser at the end.
 
-The existing `C:\ProgramData\AIAnalyze\appsettings.json` still works. It is no longer needed: with PresentMon in the `PresentMon` folder, the defaults are the same as the values in it.
-
-## 3. Check the UI
+## 4. Check the new UI
 
 Open **AIAnalyze** from the Start menu, or <http://127.0.0.1:5280/>.
 
-- **Live**: all six cards show numbers. The top-right pill says **Capturing FPS**. The GPU named above the temperature chart is the RTX 5080, not the integrated Radeon.
-- **System**: the PC's model, CPU, RAM and both GPUs with driver versions.
+- The UI is the new Lovable design and is **not** labelled "Sample" (that label means it fell back to fixture data).
+- **Health:** a verdict at the top and about 13 checks, with problems first. Click **Check now** and see the time update.
+- **Sharing banner** on Health ("Help make AIAnalyze better?"). Click **What is shared?** and look at the preview, then choose **No thanks** or **Share** (nothing is sent: no server is set up yet).
+- **Helpful / Not helpful** on a check: click one and see "Thanks".
+- **Live:** temperatures, loads and power with values; the RTX 5080 is the GPU shown.
+- **Cooling:** the RTX 5080's fans with RPM and %, CPU and case fans, and the cooling type (Liquid if an AIO pump is detected, otherwise Air).
+- **System / Memory:** each RAM stick with its slot, channel, size, type and speed, and the "Memory setup" result.
 
-## 4. Play for at least 5 minutes, then close the game and wait 1 minute
+## 5. Read the raw data (to compare with the UI)
 
-A session is saved 30 seconds after the game stops, and only with at least 300 frames.
+```powershell
+dotnet "C:\Program Files\AIAnalyze\AIAnalyze.dll" --health
+(Invoke-WebRequest -UseBasicParsing http://127.0.0.1:5280/api/cooling).Content
+(Invoke-WebRequest -UseBasicParsing http://127.0.0.1:5280/api/memory).Content
+```
 
-## 5. Check the session
+## 6. Play for 5 minutes, close the game, wait 1 minute
 
-On the **Sessions** tab, open the game's session.
+On **Sessions**, open the game's session: FPS chart, findings, and Helpful / Not helpful on each finding.
 
-- The GPU line under the title is the RTX 5080.
-- The GPU % and GPU clock charts show real values, not 0 and 600.
-- The CPU W column has values (`--timeline <id>` shows it).
-- The findings make sense for what you played, for example "Limited by the GPU" in a demanding game, or "Frame rate capped" with V-Sync on.
+## 7. Optional: the assistant with your own key (Administrator)
 
-## 6. Reboot test
-
-Restart the PC, sign in, wait a minute, and play again. Capture should work without reinstalling. Before you sign in, the Event Log should show one `Waiting for a user to sign in` warning, not an error every 30 seconds.
-
-## 7. Assistant (optional, uses your own API key)
-
-Rerun the installer with `-SetApiKey` (Administrator) and paste your own Anthropic API key when asked. Each question is billed to that key.
+Only if you want to test the assistant before the account server exists. The key is billed to its owner.
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File scripts\install-service.ps1 -SetApiKey
 ```
 
-- Click **Ask AI** and ask "What limits my FPS?" with a session open. The answer should quote numbers from that session.
-- Under the bell, open an alert and click **Ask about this**.
-- After a session that ends with warnings, the session shows **Assistant's feedback** within a minute or two.
-
-Without a key, the chat panel should say the assistant needs your own key, and nothing else should change.
+Ask "Is anything wrong with my PC right now?" and check the answer quotes this PC's health checks, cooling and RAM.
 
 ## What to send back
 
-- Screenshots of the Live tab and of one session.
-- Whether each point in steps 3, 5, 6 and 7 matched, and one example question with its answer.
-- The Event Log, if anything did not match:
+- The output of step 3 (UI build, Defender scan, PawnIO).
+- Screenshots of Health, Cooling and Memory in the new UI.
+- The output of the three commands in step 5.
+- Anything that looks wrong or empty, with the Event Log:
 
   ```powershell
   Get-WinEvent -FilterHashtable @{LogName='Application'; ProviderName='AIAnalyze'} -MaxEvents 40 | Format-List TimeCreated, Message
