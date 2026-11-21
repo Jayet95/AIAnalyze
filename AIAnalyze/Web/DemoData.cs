@@ -60,7 +60,12 @@ public static class DemoData
         var session = new CompletedSession("demo-game.exe", start, end, frames.Count, median, fpsSeconds);
         var id = store.InsertSession(session, SessionReports.SettingsKey);
         var stored = store.GetSession(id)!;
-        store.SaveFindings(id, SessionReports.Build(store, stored).Findings);
+        var findings = SessionReports.Build(store, stored).Findings;
+        store.SaveFindings(id, findings);
+        foreach (var finding in findings.Where(f => f.Severity != FindingSeverity.Info))
+        {
+            store.AddAlert(end, finding.Kind, finding.Severity, $"demo-game.exe: {finding.Message}", id);
+        }
         return id;
     }
 

@@ -304,7 +304,10 @@ async function openSession(id) {
             el("div", {}, el("div", { class: "kind" }, humanKind(f.kind)), f.message))))
       : el("div", { class: "findings" }, el("div", { class: "finding" }, el("span", { class: "badge Info" }, "OK"),
           el("div", {}, r.rows.length < 10 ? "Too little data in this session to judge." : "Nothing unusual found in this session."))),
-    el("div", { class: "muted", style: "margin-bottom:14px" }, r.baseline.message),
+    r.feedback ? feedbackBlock(r.feedback) : "",
+    el("div", { class: "detail-actions" },
+      el("span", { class: "muted" }, r.baseline.message),
+      el("button", { class: "primary-btn", onclick: () => openChat({ sessionId: s.id, question: "What happened in this session, and what should I do about it?" }) }, "Ask about this session")),
     el("div", { class: "chart-block" }, el("div", { class: "chart-title" }, "Frames per second"), fpsBlock),
     el("div", { class: "chart-block" }, el("div", { class: "chart-title" }, "Temperatures"), tempBlock),
     el("div", { class: "chart-block" }, el("div", { class: "chart-title" }, "Load"), loadBlock),
@@ -322,6 +325,12 @@ async function openSession(id) {
     { label: "GPU", color: css("--c-gpu"), points: pointsOf(rows, M.gpuLoad), unit: "%" },
   ], { yMin: 0, yMax: 100 });
   lineChart(clockBlock, [{ label: "GPU clock", color: css("--c-clock"), points: pointsOf(rows, M.gpuClock), unit: "MHz" }]);
+}
+
+function feedbackBlock(text) {
+  const body = el("div", { dir: "auto" });
+  body.innerHTML = renderAnswer(text);
+  return el("div", { class: "feedback" }, el("div", { class: "feedback-title" }, "Assistant's feedback"), body);
 }
 
 function stat(label, value) {
@@ -379,6 +388,258 @@ function showTab(name) {
 }
 
 document.querySelectorAll(".tab").forEach((t) => t.addEventListener("click", () => showTab(t.dataset.tab)));
+
+// ---------------------------------------------------------------- chat
+
+const chat = {
+  messages: [],          // { role: "user" | "assistant", content }
+  focusSessionId: null,  // session the question is about, if any
+  configured: null,
+  busy: false,
+  controller: null,
+};
+
+const SUGGESTIONS = [
+  "Is anything wrong with my PC right now?",
+  "Why did my FPS drop in the last session?",
+  "Are my temperatures OK?",
+  "What limits my FPS, the CPU or the GPU?",
+];
+
+function saveChat() {
+  try { sessionStorage.setItem("aianalyze-chat", JSON.stringify(chat.messages)); } catch { /* storage unavailable */ }
+}
+
+function loadChat() {
+  try { chat.messages = JSON.parse(sessionStorage.getItem("aianalyze-chat") || "[]"); } catch { chat.messages = []; }
+}
+
+/** Minimal, safe formatting for answers: escapes HTML, then **bold**, bullet and numbered lists, paragraphs. */
+function renderAnswer(text) {
+  const esc = (s) => s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+  const inline = (s) => esc(s).replace(/\*\*(.+?)\*\*/g, "<b>$1</b>").replace(/`([^`]+)`/g, "<code>$1</code>");
+  const out = [];
+  let list = null;
+  for (const raw of text.split("\n")) {
+    const line = raw.trimEnd();
+    const bullet = line.match(/^\s*[-*•]\s+(.*)$/);
+    const numbered = line.match(/^\s*\d+[.)]\s+(.*)$/);
+    if (bullet || numbered) {
+      const tag = bullet ? "ul" : "ol";
+      if (list !== tag) { if (list) out.push(`</${list}>`); out.push(`<${tag}>`); list = tag; }
+      out.push(`<li>${inline((bullet || numbered)[1])}</li>`);
+      continue;
+    }
+    if (list) { out.push(`</${list}>`); list = null; }
+    if (line.trim()) out.push(`<p>${inline(line.replace(/^#+\s*/, ""))}</p>`);
+  }
+  if (list) out.push(`</${list}>`);
+  return out.join("");
+}
+
+function renderChat() {
+  const box = $("#chat-messages");
+  if (chat.configured === false) {
+    box.replaceChildren(el("div", { class: "setup-note" },
+      el("b", {}, "The assistant needs your own Anthropic API key."),
+      el("div", { style: "margin-top:6px" }, "Rerun the installer as Administrator with ", el("code", {}, "-SetApiKey"),
+        " and paste your key when asked. The key stays on this PC in a file only Windows administrators can read.")));
+    $("#chat-suggestions").replaceChildren();
+    $("#chat-send").disabled = true;
+    return;
+  }
+  $("#chat-send").disabled = chat.busy;
+
+  if (!chat.messages.length) {
+    box.replaceChildren(el("div", { class: "chat-empty" },
+      "Ask about temperatures, FPS, a session or an alert. Answers use what this PC has measured."));
+  } else {
+    box.replaceChildren(...chat.messages.map((m, i) => {
+      const bubble = el("div", { class: `bubble ${m.role}${m.error ? " error" : ""}`, dir: "auto" });
+      if (m.role === "assistant" && !m.error) bubble.innerHTML = renderAnswer(m.content);
+      else bubble.textContent = m.content;
+      if (chat.busy && i === chat.messages.length - 1 && m.role === "assistant") bubble.classList.add("pending");
+      return bubble;
+    }));
+    box.scrollTop = box.scrollHeight;
+  }
+
+  $("#chat-suggestions").replaceChildren(...(chat.messages.length ? [] : SUGGESTIONS.map((q) =>
+    el("button", { class: "chip", type: "button", onclick: () => ask(q) }, q))));
+  $("#chat-context").textContent = chat.focusSessionId
+    ? `Includes session ${chat.focusSessionId} in detail`
+    : "Uses this PC's measurements";
+}
+
+async function openChat({ question, sessionId } = {}) {
+  if (sessionId !== undefined) chat.focusSessionId = sessionId;
+  else if (activeTab === "sessions" && selectedSession) chat.focusSessionId = selectedSession;
+  $("#chat").classList.add("open");
+  $("#chat").setAttribute("aria-hidden", "false");
+  if (chat.configured === null) {
+    try { chat.configured = (await getJson("/api/chat/status")).configured; } catch { chat.configured = false; }
+  }
+  renderChat();
+  if (question) ask(question);
+  else $("#chat-input").focus();
+}
+
+function closeChat() {
+  $("#chat").classList.remove("open");
+  $("#chat").setAttribute("aria-hidden", "true");
+}
+
+async function ask(question) {
+  question = question.trim();
+  if (!question || chat.busy || chat.configured === false) return;
+
+  chat.messages.push({ role: "user", content: question });
+  const answer = { role: "assistant", content: "" };
+  chat.messages.push(answer);
+  chat.busy = true;
+  $("#chat-input").value = "";
+  renderChat();
+
+  const history = chat.messages.slice(0, -1).filter((m) => !m.error).map(({ role, content }) => ({ role, content }));
+  chat.controller = new AbortController();
+  try {
+    const res = await fetch("/api/chat", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ messages: history, sessionId: chat.focusSessionId }),
+      signal: chat.controller.signal,
+    });
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      throw new Error(body.error || `The assistant is unavailable (${res.status}).`);
+    }
+
+    // Server-sent events: lines of "data: {json}" separated by blank lines.
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+    for (;;) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      let cut;
+      while ((cut = buffer.indexOf("\n\n")) >= 0) {
+        const line = buffer.slice(0, cut).trim();
+        buffer = buffer.slice(cut + 2);
+        if (!line.startsWith("data:")) continue;
+        const event = JSON.parse(line.slice(5));
+        if (event.text) { answer.content += event.text; renderChat(); }
+        if (event.error) throw new Error(event.error);
+      }
+    }
+    if (!answer.content) answer.content = "(No answer.)";
+  } catch (err) {
+    if (err.name !== "AbortError") {
+      answer.content = err.message;
+      answer.error = true;
+    }
+  } finally {
+    chat.busy = false;
+    chat.controller = null;
+    saveChat();
+    renderChat();
+  }
+}
+
+$("#chat-btn").addEventListener("click", () => openChat());
+$("#chat-close").addEventListener("click", closeChat);
+$("#chat-clear").addEventListener("click", () => {
+  chat.controller?.abort();
+  chat.messages = [];
+  chat.focusSessionId = activeTab === "sessions" ? selectedSession : null;
+  saveChat();
+  renderChat();
+});
+$("#chat-form").addEventListener("submit", (ev) => { ev.preventDefault(); ask($("#chat-input").value); });
+$("#chat-input").addEventListener("keydown", (ev) => {
+  if (ev.key === "Enter" && !ev.shiftKey) { ev.preventDefault(); ask($("#chat-input").value); }
+});
+document.addEventListener("keydown", (ev) => { if (ev.key === "Escape") { closeChat(); $("#alerts-panel").classList.add("hidden"); } });
+
+// ---------------------------------------------------------------- alerts
+
+const alertsState = { lastId: null, items: [], unseen: 0 };
+
+function askAboutAlert(a) {
+  openChat({
+    question: `Explain this alert in plain words: "${a.message}". What most likely caused it, and what should I do?`,
+    sessionId: a.sessionId ?? null,
+  });
+}
+
+function renderAlertCount() {
+  const badge = $("#alert-count");
+  badge.textContent = alertsState.unseen > 9 ? "9+" : String(alertsState.unseen);
+  badge.classList.toggle("hidden", alertsState.unseen === 0);
+}
+
+function renderAlertsPanel() {
+  const panel = $("#alerts-panel");
+  if (!alertsState.items.length) {
+    panel.replaceChildren(el("div", { class: "empty" }, "No alerts. You'll see temperature warnings and session problems here."));
+    return;
+  }
+  panel.replaceChildren(...alertsState.items.map((a) =>
+    el("div", { class: "alert-row" },
+      el("div", { class: "meta" }, el("span", { class: `badge ${a.severity}` }, a.severity), fmt.date(a.atUtc)),
+      el("div", { dir: "auto" }, a.message),
+      el("div", { class: "actions" }, el("button", { class: "text-btn", onclick: () => askAboutAlert(a) }, "Ask about this")))));
+}
+
+function showToast(a) {
+  const toast = el("div", { class: `toast ${a.severity}` },
+    el("div", { class: "meta" }, el("span", { class: `badge ${a.severity}` }, a.severity)),
+    el("div", { dir: "auto" }, a.message),
+    el("div", { class: "actions" },
+      el("button", { class: "text-btn", onclick: () => toast.remove() }, "Dismiss"),
+      el("button", { class: "primary-btn", onclick: () => { toast.remove(); askAboutAlert(a); } }, "Ask about this")));
+  $("#toasts").append(toast);
+  setTimeout(() => toast.remove(), 20000);
+}
+
+async function refreshAlerts() {
+  let fresh;
+  try {
+    fresh = await getJson(`/api/alerts?after=${alertsState.lastId ?? 0}`);
+  } catch {
+    return;
+  }
+  if (!fresh.length) return;
+  const firstLoad = alertsState.lastId === null;
+  alertsState.lastId = Math.max(alertsState.lastId ?? 0, ...fresh.map((a) => a.id));
+  alertsState.items = [...fresh, ...alertsState.items].slice(0, 50);
+  // On first load only list existing alerts; pop up the ones that arrive while the page is open.
+  if (!firstLoad) {
+    fresh.slice(0, 3).forEach(showToast);
+    alertsState.unseen += fresh.length;
+  }
+  renderAlertCount();
+  if (!$("#alerts-panel").classList.contains("hidden")) renderAlertsPanel();
+}
+
+$("#alerts-btn").addEventListener("click", (ev) => {
+  ev.stopPropagation();
+  const panel = $("#alerts-panel");
+  panel.classList.toggle("hidden");
+  if (!panel.classList.contains("hidden")) {
+    alertsState.unseen = 0;
+    renderAlertCount();
+    renderAlertsPanel();
+  }
+});
+document.addEventListener("click", (ev) => {
+  const panel = $("#alerts-panel");
+  if (!panel.contains(ev.target) && ev.target !== $("#alerts-btn")) panel.classList.add("hidden");
+});
+
+loadChat();
+refreshAlerts();
+setInterval(() => { if (!document.hidden) refreshAlerts(); }, 10000);
 
 refreshStatus();
 refreshLive();

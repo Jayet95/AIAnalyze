@@ -18,6 +18,7 @@
   </ItemGroup>
 
   <ItemGroup>
+    <PackageReference Include="Anthropic" Version="13.1.0" />
     <PackageReference Include="LibreHardwareMonitorLib" Version="0.9.6" />
     <PackageReference Include="Microsoft.Data.Sqlite" Version="11.0.0" />
     <PackageReference Include="Microsoft.Extensions.Hosting" Version="10.0.15" />

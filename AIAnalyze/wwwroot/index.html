@@ -25,7 +25,16 @@
     <div class="status">
       <span id="capture-pill" class="pill">Connecting…</span>
       <span id="sample-age" class="muted"></span>
+      <button id="alerts-btn" class="icon-btn" title="Alerts" aria-label="Alerts">
+        <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path d="M6 16V11a6 6 0 1 1 12 0v5l1.5 2h-15L6 16zm4 4h4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        <span id="alert-count" class="count hidden"></span>
+      </button>
+      <button id="chat-btn" class="primary-btn">
+        <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path d="M4 5h16v11H9l-5 4V5z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></svg>
+        Ask AI
+      </button>
     </div>
+    <div id="alerts-panel" class="alerts-panel hidden" role="dialog" aria-label="Alerts"></div>
   </header>
 
   <main>
@@ -68,6 +77,28 @@
     </section>
   </main>
 
+  <aside id="chat" class="drawer" aria-hidden="true" aria-label="Ask about your PC">
+    <div class="drawer-head">
+      <div>
+        <div class="drawer-title">Ask about your PC</div>
+        <div class="muted small" id="chat-context">Uses this PC's measurements</div>
+      </div>
+      <div class="drawer-actions">
+        <button class="text-btn" id="chat-clear" title="Start a new conversation">New</button>
+        <button class="icon-btn" id="chat-close" aria-label="Close">
+          <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+        </button>
+      </div>
+    </div>
+    <div class="chat-messages" id="chat-messages"></div>
+    <div class="chat-suggestions" id="chat-suggestions"></div>
+    <form class="chat-form" id="chat-form">
+      <textarea id="chat-input" rows="2" dir="auto" placeholder="Ask anything, in any language… (Enter to send)"></textarea>
+      <button type="submit" class="primary-btn" id="chat-send">Send</button>
+    </form>
+  </aside>
+
+  <div id="toasts" class="toasts" aria-live="polite"></div>
   <div id="tooltip" class="tooltip hidden"></div>
   <script src="app.js"></script>
 </body>

@@ -65,8 +65,86 @@ public sealed class SampleStore : IDisposable
                 message    TEXT    NOT NULL
             );
             CREATE INDEX IF NOT EXISTS ix_findings_session ON session_findings (session_id);
+            CREATE TABLE IF NOT EXISTS session_feedback (
+                session_id  INTEGER PRIMARY KEY,
+                created_utc INTEGER NOT NULL,  -- Unix milliseconds
+                text        TEXT    NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS alerts (
+                id         INTEGER PRIMARY KEY,
+                ts_utc     INTEGER NOT NULL,  -- Unix milliseconds
+                kind       TEXT    NOT NULL,
+                severity   TEXT    NOT NULL,
+                message    TEXT    NOT NULL,
+                session_id INTEGER            -- set when the alert comes from a session finding
+            );
             """;
         create.ExecuteNonQuery();
+    }
+
+    /// <summary>Stores (or replaces) the assistant's feedback on a session.</summary>
+    public void SaveFeedback(long sessionId, string text, DateTimeOffset at)
+    {
+        using var cmd = _connection.CreateCommand();
+        cmd.CommandText = """
+            INSERT INTO session_feedback (session_id, created_utc, text) VALUES ($id, $ts, $text)
+            ON CONFLICT(session_id) DO UPDATE SET created_utc = excluded.created_utc, text = excluded.text;
+            """;
+        cmd.Parameters.AddWithValue("$id", sessionId);
+        cmd.Parameters.AddWithValue("$ts", at.ToUnixTimeMilliseconds());
+        cmd.Parameters.AddWithValue("$text", text);
+        cmd.ExecuteNonQuery();
+    }
+
+    /// <summary>The assistant's feedback on a session, or null.</summary>
+    public string? GetFeedback(long sessionId)
+    {
+        using var cmd = _connection.CreateCommand();
+        cmd.CommandText = "SELECT text FROM session_feedback WHERE session_id = $id;";
+        cmd.Parameters.AddWithValue("$id", sessionId);
+        return cmd.ExecuteScalar() as string;
+    }
+
+    /// <summary>Records something the user should notice. Returns the alert id.</summary>
+    public long AddAlert(DateTimeOffset at, string kind, Analysis.FindingSeverity severity, string message, long? sessionId = null)
+    {
+        using var cmd = _connection.CreateCommand();
+        cmd.CommandText = """
+            INSERT INTO alerts (ts_utc, kind, severity, message, session_id) VALUES ($ts, $kind, $sev, $msg, $session);
+            SELECT last_insert_rowid();
+            """;
+        cmd.Parameters.AddWithValue("$ts", at.ToUnixTimeMilliseconds());
+        cmd.Parameters.AddWithValue("$kind", kind);
+        cmd.Parameters.AddWithValue("$sev", severity.ToString());
+        cmd.Parameters.AddWithValue("$msg", message);
+        cmd.Parameters.AddWithValue("$session", sessionId.HasValue ? sessionId.Value : DBNull.Value);
+        return (long)cmd.ExecuteScalar()!;
+    }
+
+    /// <summary>Alerts newer than <paramref name="afterId"/>, newest first.</summary>
+    public IReadOnlyList<StoredAlert> GetAlerts(long afterId, int limit)
+    {
+        using var cmd = _connection.CreateCommand();
+        cmd.CommandText = """
+            SELECT id, ts_utc, kind, severity, message, session_id FROM alerts
+            WHERE id > $after ORDER BY id DESC LIMIT $limit;
+            """;
+        cmd.Parameters.AddWithValue("$after", afterId);
+        cmd.Parameters.AddWithValue("$limit", limit);
+
+        var rows = new List<StoredAlert>();
+        using var reader = cmd.ExecuteReader();
+        while (reader.Read())
+        {
+            rows.Add(new StoredAlert(
+                reader.GetInt64(0),
+                DateTimeOffset.FromUnixTimeMilliseconds(reader.GetInt64(1)),
+                reader.GetString(2),
+                reader.GetString(3),
+                reader.GetString(4),
+                reader.IsDBNull(5) ? null : reader.GetInt64(5)));
+        }
+        return rows;
     }
 
     /// <summary>Median FPS of the sessions of this game that started before the given time.</summary>

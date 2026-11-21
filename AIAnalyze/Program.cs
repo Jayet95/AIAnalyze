@@ -111,6 +111,12 @@ builder.Configuration.AddJsonFile(
     optional: true,
     reloadOnChange: true);
 
+// The user's own Anthropic API key, written by the installer to a file only SYSTEM and Administrators can read.
+builder.Configuration.AddJsonFile(
+    Path.Combine(TelemetryPaths.DataDirectory, "secrets.json"),
+    optional: true,
+    reloadOnChange: false);
+
 // Runs as a Windows service when installed with the install script; a normal console run still works.
 builder.Services.AddWindowsService(options => options.ServiceName = "AIAnalyze");
 builder.Logging.AddEventLog();
@@ -121,6 +127,8 @@ builder.WebHost.UseUrls($"http://127.0.0.1:{port}");
 
 builder.Services.Configure<PresentMonOptions>(builder.Configuration.GetSection("PresentMon"));
 builder.Services.AddSingleton<CaptureStatus>();
+var claudeOptions = builder.Configuration.GetSection("Claude").Get<AIAnalyze.Chat.ClaudeOptions>() ?? new();
+builder.Services.AddSingleton(new AIAnalyze.Chat.ClaudeChat(claudeOptions));
 builder.Services.AddHostedService<Worker>();
 builder.Services.AddHostedService<FpsMonitorService>();
 
@@ -128,4 +136,5 @@ var app = builder.Build();
 app.UseDefaultFiles();
 app.UseStaticFiles();
 app.MapApi();
+app.MapChat();
 app.Run();

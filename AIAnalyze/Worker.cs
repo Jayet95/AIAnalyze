@@ -44,7 +44,7 @@ public class Worker(ILogger<Worker> logger) : BackgroundService
                 var now = DateTimeOffset.UtcNow;
                 var samples = reader.ReadOnce();
                 store.WriteTick(now, SampleSelection.ForTick(samples, tick++));
-                LogThermalFindings(samples, now, lastLogged);
+                LogThermalFindings(store, samples, now, lastLogged);
 
                 if (now >= nextCleanup)
                 {
@@ -68,6 +68,7 @@ public class Worker(ILogger<Worker> logger) : BackgroundService
     /// so a hot CPU does not flood the log every second.
     /// </summary>
     private void LogThermalFindings(
+        SampleStore store,
         IReadOnlyList<Sensors.SensorSample> samples,
         DateTimeOffset now,
         Dictionary<string, DateTimeOffset> lastLogged)
@@ -80,6 +81,10 @@ public class Worker(ILogger<Worker> logger) : BackgroundService
             }
 
             lastLogged[finding.SensorId] = now;
+            var severity = finding.Severity == Analysis.TemperatureSeverity.Critical
+                ? Analysis.FindingSeverity.Critical
+                : Analysis.FindingSeverity.Warning;
+            store.AddAlert(now, "Temperature", severity, finding.Message);
             if (finding.Severity == Analysis.TemperatureSeverity.Critical)
             {
                 logger.LogError("{Message}", finding.Message);

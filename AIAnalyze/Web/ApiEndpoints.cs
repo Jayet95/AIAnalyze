@@ -113,6 +113,7 @@ public static class ApiEndpoints
                     fps = report.Deviation.BaselineFps,
                 },
                 findings = report.Findings.Select(f => new { f.Kind, severity = f.Severity.ToString(), f.Message }),
+                feedback = store.GetFeedback(id),
                 rows = report.Rows.Select(r => new { t = r.UnixSeconds, fps = r.Fps, m = r.Metrics }),
             });
         });

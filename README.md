@@ -31,10 +31,38 @@ powershell -ExecutionPolicy Bypass -File scripts\uninstall-service.ps1
 Open **AIAnalyze** from the Start menu, or go to <http://127.0.0.1:5280/>.
 
 - **Live**: CPU and GPU temperature, load, power and clock, with the last 5 minutes as charts, plus the state of FPS capture.
-- **Sessions**: every game session with its findings, median FPS against your usual FPS for that game, and per-second charts of FPS, temperatures, load and GPU clock.
+- **Sessions**: every game session with its findings, the assistant's feedback, median FPS against your usual FPS for that game, and per-second charts of FPS, temperatures, load and GPU clock.
 - **System**: the PC's model, CPU, RAM, GPUs with driver versions, motherboard, BIOS and Windows version.
 
 A session is saved 30 seconds after a game stops presenting frames, and only if it has at least 300 frames. `dwm.exe` is ignored.
+
+## Assistant (chat and automatic feedback)
+
+Click **Ask AI** in the top bar to ask questions about the PC in any language, such as "Why did my FPS drop?" or "Are my temperatures OK?". Each question goes to Claude together with a short briefing of what the app measured: the PC and its drivers, current readings, recent alerts, recent sessions with their findings, and the session you have open. Answers quote those numbers and say when the data doesn't show something.
+
+- **Alerts**: temperature warnings and session problems appear under the bell and as pop-ups while the UI is open. Each has **Ask about this**, which opens the chat with that alert and its session.
+- **Automatic feedback**: when a session ends with warnings, the assistant writes a short explanation on its own (what happened, the likely cause, what to do). It shows on the session and as an alert. At most one every 10 minutes.
+- The assistant only reads data. It can't change settings or install anything.
+
+The assistant uses **your own Anthropic API key**, and each question or automatic feedback is billed to it. To turn it on, rerun the installer with `-SetApiKey` and paste the key when asked:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\install-service.ps1 -SetApiKey
+```
+
+The key is stored in `C:\ProgramData\AIAnalyze\secrets.json`, readable only by SYSTEM and Administrators. Remove it with `-RemoveApiKey`. Without a key, the rest of the app works and the chat explains how to set it up.
+
+Assistant settings, all optional, in `C:\ProgramData\AIAnalyze\appsettings.json`:
+
+```json
+{
+  "Claude": {
+    "AutoFeedback": true,
+    "FeedbackLanguage": "English",
+    "Model": "claude-opus-5-5"
+  }
+}
+```
 
 ## How capture works
 

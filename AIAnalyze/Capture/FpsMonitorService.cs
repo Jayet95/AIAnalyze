@@ -14,8 +14,13 @@ namespace AIAnalyze.Capture;
 public sealed class FpsMonitorService(
     ILogger<FpsMonitorService> logger,
     IOptions<PresentMonOptions> options,
-    CaptureStatus status) : BackgroundService
+    CaptureStatus status,
+    Chat.ClaudeChat chat) : BackgroundService
 {
+    // Automatic AI feedback spends the user's API credits, so it is rate-limited.
+    private static readonly TimeSpan FeedbackInterval = TimeSpan.FromMinutes(10);
+    private DateTimeOffset _lastFeedback = DateTimeOffset.MinValue;
+
     // An application silent for longer than this ends its session.
     private static readonly TimeSpan IdleGap = TimeSpan.FromSeconds(30);
 
@@ -237,7 +242,46 @@ public sealed class FpsMonitorService(
             else
             {
                 logger.LogWarning("Session {Id}: {Message}", id, finding.Message);
+                store.AddAlert(DateTimeOffset.UtcNow, finding.Kind, finding.Severity,
+                    $"{session.Application}: {finding.Message}", id);
             }
+        }
+
+        var now = DateTimeOffset.UtcNow;
+        if (chat.AutoFeedbackEnabled
+            && report.Findings.Any(f => f.Severity != FindingSeverity.Info)
+            && now - _lastFeedback >= FeedbackInterval)
+        {
+            _lastFeedback = now;
+            _ = Task.Run(() => WriteFeedbackAsync(id, session.Application));
+        }
+    }
+
+    /// <summary>
+    /// Asks the assistant for short feedback on a session that ended with warnings, stores it with the
+    /// session and raises an alert so the user sees it. Runs off the capture loop; failures are only logged.
+    /// </summary>
+    private async Task WriteFeedbackAsync(long sessionId, string application)
+    {
+        try
+        {
+            using var timeout = new CancellationTokenSource(TimeSpan.FromMinutes(3));
+            using var store = new SampleStore(TelemetryPaths.DatabasePath);
+            var briefing = Chat.DiagnosticContext.Build(store, status, sessionId, DateTimeOffset.UtcNow);
+            var feedback = await chat.AnswerAsync(chat.FeedbackQuestion, briefing, timeout.Token);
+            if (feedback.Length == 0)
+            {
+                return;
+            }
+
+            store.SaveFeedback(sessionId, feedback, DateTimeOffset.UtcNow);
+            store.AddAlert(DateTimeOffset.UtcNow, "Feedback", FindingSeverity.Info,
+                $"{application}: the assistant reviewed this session. Open it on the Sessions tab.", sessionId);
+            logger.LogInformation("AI feedback saved for session {Id}.", sessionId);
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Could not get AI feedback for session {Id}.", sessionId);
         }
     }
 }

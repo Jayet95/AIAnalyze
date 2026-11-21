@@ -1,6 +1,6 @@
 # Publishes AIAnalyze, installs it as an automatically starting Windows service, and opens its UI.
 # Run from PowerShell opened as Administrator, in the repo root:
-#   powershell -ExecutionPolicy Bypass -File scripts\install-service.ps1 -PresentMonPath C:\Downloads\PresentMon.exe
+#   powershell -ExecutionPolicy Bypass -File scripts\install-service.ps1 -PresentMonPath C:\Downloads\PresentMon.exe -SetApiKey
 #
 # -PresentMonPath is needed only the first time: the file is copied to <InstallDir>\PresentMon\PresentMon.exe,
 # which the service finds on its own, and reinstalls keep it.
@@ -19,7 +19,14 @@ param(
     [System.Management.Automation.PSCredential]$ServiceCredential,
 
     # Do not open the UI in the browser at the end.
-    [switch]$NoBrowser
+    [switch]$NoBrowser,
+
+    # Ask for your own Anthropic API key for the chat assistant. It is stored in
+    # C:\ProgramData\AIAnalyze\secrets.json, readable only by SYSTEM and Administrators.
+    [switch]$SetApiKey,
+
+    # Delete the stored API key; the chat assistant is then turned off.
+    [switch]$RemoveApiKey
 )
 
 $ErrorActionPreference = "Stop"
@@ -69,6 +76,32 @@ if ($Port -ne 5280) {
     $settings | ConvertTo-Json -Depth 5 | Set-Content $overridePath -Encoding utf8
 }
 
+# The chat assistant uses the installing user's own Anthropic API key.
+$secretsPath = Join-Path $dataDir "secrets.json"
+if ($RemoveApiKey -and (Test-Path $secretsPath)) {
+    Remove-Item $secretsPath -Force
+    Write-Host "Removed the stored API key."
+}
+if ($SetApiKey) {
+    $secure = Read-Host "Paste your Anthropic API key (input is hidden)" -AsSecureString
+    $bstr = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($secure)
+    try {
+        $key = [Runtime.InteropServices.Marshal]::PtrToStringBSTR($bstr).Trim()
+    } finally {
+        [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($bstr)
+    }
+    if (-not $key) { throw "No key entered." }
+
+    New-Item -ItemType Directory -Force $dataDir | Out-Null
+    # Create and lock the file before the key is written: only SYSTEM (S-1-5-18) and Administrators (S-1-5-32-544).
+    Set-Content -Path $secretsPath -Value "{}" -Encoding ascii
+    icacls $secretsPath /inheritance:r /grant:r "*S-1-5-18:F" "*S-1-5-32-544:F" | Out-Null
+    if ($LASTEXITCODE -ne 0) { Remove-Item $secretsPath -Force; throw "Could not restrict access to $secretsPath." }
+    @{ Claude = @{ ApiKey = $key } } | ConvertTo-Json | Set-Content -Path $secretsPath -Encoding ascii
+    $key = $null
+    Write-Host "Stored the API key in $secretsPath (readable only by SYSTEM and Administrators)."
+}
+
 $exe = Join-Path $InstallDir "AIAnalyze.exe"
 $serviceArgs = @{
     Name           = $serviceName
@@ -97,6 +130,11 @@ Write-Host "AIAnalyze is installed and running."
 Write-Host "  UI:          $uiUrl  (also in the Start menu as 'AIAnalyze')"
 Write-Host "  Data:        $dataDir"
 Write-Host "  Settings:    $dataDir\appsettings.json (optional overrides, kept across reinstalls)"
+if (Test-Path $secretsPath) {
+    Write-Host "  Assistant:   on (uses your API key from $secretsPath)"
+} else {
+    Write-Host "  Assistant:   off. To turn it on, rerun with -SetApiKey and paste your own Anthropic API key."
+}
 
 if (-not $NoBrowser) {
     Start-Sleep -Seconds 3
