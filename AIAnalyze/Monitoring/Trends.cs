@@ -143,7 +143,7 @@ public static class TrendAnalyzer
             {
                 problems.Add(new PotentialProblem($"drive-filling-{drive.Name.TrimEnd(':').ToLowerInvariant()}",
                     days <= 14 ? FindingSeverity.Critical : FindingSeverity.Warning,
-                    $"{drive.Name} filling up",
+                    $"Drive {drive.Name.TrimEnd(':')} filling up",
                     $"{drive.Name} lost about {F(-slope, "0.#")} GB a day over the last two weeks and has {F(freeGb)} GB left: full in about {F(days)} days at this pace.",
                     $"My {drive.Name} drive is filling up fast. What is taking the space?"));
             }

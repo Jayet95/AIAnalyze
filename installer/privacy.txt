@@ -10,6 +10,7 @@ What can leave your PC, only if you choose
 
 - Assistant questions: when you ask the assistant something, your question goes to Claude together with a summary of this PC's measurements, so it can answer about your PC. To answer, the assistant can also ask the app for more of this PC's data, such as Windows event entries, temperature history or a game session; the app looks it up on your PC and sends only that answer. This can include names of programs (for example one that crashed) and short Windows event messages. Our server doesn't store the content.
 - Anonymous diagnostics: off until you turn it on. Once a day it sends hardware models, driver versions, Windows build, which checks failed, which finding types appeared, game file names and FPS, and your Helpful / Not helpful votes. Never names of your files, folders or other programs, never Event Log text, never chat content. Settings shows exactly what would be sent.
+- Email alerts: off until you turn them on (needs signing in). When AIAnalyze finds a serious problem, it sends the problem's title and description to our server, which emails it to your account's address. At most 5 a day.
 - Signing in is optional. It opens your browser; AIAnalyze never sees your password.
 
 What AIAnalyze never does

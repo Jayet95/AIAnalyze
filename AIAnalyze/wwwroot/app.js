@@ -944,9 +944,9 @@ async function openSettings({ showPreview = false } = {}) {
   body.replaceChildren(el("div", { class: "muted" }, "Loading…"));
   $("#settings").classList.remove("hidden");
 
-  let privacy;
+  let privacy, notifications;
   try {
-    [privacy] = await Promise.all([getJson("/api/privacy"), refreshAccount()]);
+    [privacy, notifications] = await Promise.all([getJson("/api/privacy"), getJson("/api/notifications"), refreshAccount()]);
   } catch {
     body.replaceChildren(el("div", { class: "muted" }, "Could not load settings."));
     return;
@@ -965,6 +965,27 @@ async function openSettings({ showPreview = false } = {}) {
     await setConsent(toggle.checked);
   });
 
+  const emailToggle = el("input", { type: "checkbox", id: "email-toggle" });
+  emailToggle.checked = notifications.emailAlerts;
+  emailToggle.disabled = !notifications.available && !notifications.emailAlerts;
+  const emailNote = el("p", { class: "small", style: "margin-top:8px" }, notifications.reason ?? "");
+  const testBtn = el("button", { class: "text-btn", onclick: async () => {
+    testBtn.disabled = true;
+    const res = await fetch("/api/notifications/test", { method: "POST" }).catch(() => null);
+    const out = res ? await res.json().catch(() => ({})) : {};
+    infoToast(res?.ok ? `Test email sent to ${notifications.email}.` : out.error || "The test email could not be sent.");
+    testBtn.disabled = false;
+  } }, "Send a test email");
+  emailToggle.addEventListener("change", async () => {
+    const res = await fetch("/api/notifications", { method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ emailAlerts: emailToggle.checked }) }).catch(() => null);
+    if (!res?.ok) {
+      const out = res ? await res.json().catch(() => ({})) : {};
+      emailToggle.checked = !emailToggle.checked;
+      infoToast(out.error || "Could not change email alerts.");
+    }
+  });
+
   body.replaceChildren(
     el("div", { class: "setting" },
       el("h3", {}, "Account"),
@@ -973,6 +994,15 @@ async function openSettings({ showPreview = false } = {}) {
         ? el("button", { class: "text-btn", onclick: async () => { await signOut(); openSettings(); } }, "Sign out")
         : account?.signInConfigured ? el("a", { class: "primary-btn", href: "/auth/sign-in" }, "Sign in") : null),
     el("div", { class: "setting" }, el("h3", {}, "Assistant"), el("p", {}, assistantText)),
+    el("div", { class: "setting" },
+      el("h3", {}, "Notifications"),
+      el("p", { class: "muted" }, "Windows notifications show problems as they happen, also while you play."),
+      el("label", { class: "toggle", for: "email-toggle" }, emailToggle,
+        el("span", {}, el("b", {}, "Email me about serious problems"),
+          el("div", { class: "muted" },
+            `For when you're away from the PC: a failing drive, blue screens, critical heat, a drive about to fill up, or a problem building up over weeks. At most one email per problem a day and ${notifications.dailyLimit} a day. Sent to ${notifications.email ?? "your account's email address"}. The email contains only the problem's title and description.`))),
+      notifications.reason ? emailNote : null,
+      notifications.available ? testBtn : null),
     el("div", { class: "setting" },
       el("h3", {}, "Privacy"),
       el("label", { class: "toggle", for: "share-toggle" }, toggle,

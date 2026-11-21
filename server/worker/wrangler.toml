@@ -14,7 +14,11 @@ SITE_ORIGIN = ""
 MODEL = "claude-opus-5-5"
 DAILY_FREE_QUESTIONS = "30"
 
+# Optional email alerts: the sender address on a domain verified at Resend, for example "AIAnalyze <alerts@yourdomain.com>".
+EMAIL_FROM = ""
+
 # ANTHROPIC_API_KEY is a secret: set it with `npx wrangler secret put ANTHROPIC_API_KEY`, never here.
+# RESEND_API_KEY (email alerts) is a secret too: `npx wrangler secret put RESEND_API_KEY`.
 
 [[d1_databases]]
 binding = "DB"

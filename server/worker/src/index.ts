@@ -9,6 +9,7 @@ import TOOLS from "../../../AIAnalyze/Chat/Assistant/tools.json";
  *   POST /v1/chat       one model call for a question, with the app's tools (signed-in, daily quota);
  *                       the app runs the tools on the PC and sends their results in the next call
  *   POST /v1/telemetry  opt-in diagnostics snapshot and feedback votes (anonymous or signed-in)
+ *   POST /v1/notify     email a serious problem to the signed-in user (opt-in in the app, daily limit)
  */
 export interface Env {
   DB: D1Database;
@@ -19,6 +20,9 @@ export interface Env {
   DAILY_FREE_QUESTIONS: string;
   /** Website origin allowed to read /v1/me from the browser, for example https://aianalyze.app. */
   SITE_ORIGIN?: string;
+  /** Email alerts: Resend API key (a secret) and the sender, for example "AIAnalyze <alerts@yourdomain.com>". */
+  RESEND_API_KEY?: string;
+  EMAIL_FROM?: string;
 }
 
 const MAX_MESSAGES = 60; // 20 conversation turns plus the tool steps of the current question
@@ -29,6 +33,8 @@ const MAX_BRIEFING_CHARS = 60_000;
 const MAX_CHAT_BYTES = 768 * 1024;
 const MAX_TELEMETRY_BYTES = 64 * 1024;
 const MAX_TELEMETRY_PER_DEVICE_PER_DAY = 50;
+/** Email alerts per user per day; matches EmailAlertRules.DailyLimit in the app. */
+const MAX_EMAILS_PER_DAY = 5;
 /** Model calls per question; must match ClaudeChat.MaxSteps in the app. */
 const MAX_STEPS = 8;
 /** Tool steps a user may spend per day, per free question. */
@@ -52,6 +58,7 @@ export default {
       if (request.method === "GET" && url.pathname === "/v1/me") return withCors(await me(request, env), request, env);
       if (request.method === "POST" && url.pathname === "/v1/chat") return await chat(request, env);
       if (request.method === "POST" && url.pathname === "/v1/telemetry") return await telemetry(request, env);
+      if (request.method === "POST" && url.pathname === "/v1/notify") return await notify(request, env);
       return json({ error: "Not found." }, 404);
     } catch (err) {
       // Errors on /v1/me carry CORS headers too, so the website can show "sign in again" instead of a blocked request.
@@ -68,6 +75,7 @@ export default {
       env.DB.prepare("DELETE FROM telemetry WHERE received_utc < datetime('now', '-90 days')"),
       env.DB.prepare("DELETE FROM feedback WHERE created_utc < datetime('now', '-90 days')"),
       env.DB.prepare("DELETE FROM usage WHERE day < date('now', '-60 days')"),
+      env.DB.prepare("DELETE FROM email_usage WHERE day < date('now', '-60 days')"),
     ]);
   },
 };
@@ -156,6 +164,96 @@ async function chat(request: Request, env: Env): Promise<Response> {
   return new Response(stream, {
     headers: { "Content-Type": "text/event-stream", "Cache-Control": "no-cache" },
   });
+}
+
+/**
+ * Emails a serious problem to the signed-in user's own address. The app decides what is serious and sends
+ * only the alert's title and text; the address comes from the sign-in provider, never from the request,
+ * so the route can't be used to email anyone else. Nothing is stored except a count per user per day.
+ */
+async function notify(request: Request, env: Env): Promise<Response> {
+  const token = bearer(request);
+  if (!token) throw new HttpError(401, "Sign in to get email alerts.");
+  const userId = await verifyToken(token, env);
+  if (!env.RESEND_API_KEY || !env.EMAIL_FROM) throw new HttpError(503, "Email alerts are not set up on the server.");
+
+  const body = await readJson<{ severity?: string; title?: string; detail?: string; atUtc?: string; test?: boolean }>(request, 8 * 1024);
+  const title = clean(body.title, 120);
+  const detail = clean(body.detail, 1000, true);
+  if (!title || !detail) throw new HttpError(400, "An alert needs a title and a detail.");
+  const severity = ["Info", "Warning", "Critical"].includes(body.severity ?? "") ? body.severity! : "Warning";
+  const at = !Number.isNaN(Date.parse(body.atUtc ?? "")) ? new Date(body.atUtc!) : new Date();
+
+  const counted = await env.DB.prepare(
+    `INSERT INTO email_usage (user_id, day, emails) VALUES (?1, ?2, 1)
+     ON CONFLICT (user_id, day) DO UPDATE SET emails = emails + 1 WHERE emails < ?3
+     RETURNING emails`,
+  )
+    .bind(userId, today(), MAX_EMAILS_PER_DAY)
+    .first<{ emails: number }>();
+  if (!counted) throw new HttpError(429, `Today's ${MAX_EMAILS_PER_DAY} email alerts were already sent.`);
+
+  const to = await userEmail(token, env);
+  if (!to) throw new HttpError(400, "Your account has no email address.");
+
+  const subject = body.test ? "AIAnalyze: test email" : `AIAnalyze${severity === "Critical" ? " (important)" : ""}: ${title}`;
+  const text = [
+    body.test ? "This is a test email from AIAnalyze." : "AIAnalyze found something on your PC that needs attention.",
+    "",
+    title,
+    detail,
+    "",
+    `Seen ${at.toISOString().replace("T", " ").slice(0, 16)} UTC.`,
+    "",
+    "Open AIAnalyze on your PC and ask the assistant about it to find out the cause and what to do.",
+    "",
+    "You get these emails because you turned on email alerts in AIAnalyze. To stop them, turn off",
+    "\"Email me about serious problems\" in AIAnalyze Settings.",
+  ].join("\n");
+
+  const res = await fetch("https://api.resend.com/emails", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${env.RESEND_API_KEY}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ from: env.EMAIL_FROM, to: [to], subject, text }),
+  });
+  if (!res.ok) {
+    console.error("Email provider answered", res.status, await res.text().catch(() => ""));
+    throw new HttpError(502, "The email could not be sent. Try again later.");
+  }
+  return json({ sent: true });
+}
+
+/** One line of plain text (or several, for the detail), without control characters, cut to length. */
+function clean(value: unknown, max: number, multiline = false): string {
+  if (typeof value !== "string") return "";
+  const text = value.replace(multiline ? /[\u0000-\u0009\u000B-\u001F\u007F]/g : /[\u0000-\u001F\u007F]/g, " ").trim();
+  return text.length <= max ? text : text.slice(0, max - 1) + "…";
+}
+
+const emailCache = new Map<string, { email: string | null; until: number }>();
+
+/** The account's email: from the token when it carries one, otherwise from the provider's userinfo endpoint. */
+async function userEmail(token: string, env: Env): Promise<string | null> {
+  const parts = token.split(".");
+  if (parts.length === 3) {
+    try {
+      // The signature was already verified by verifyToken; this only reads the claim.
+      const payload = JSON.parse(atob(parts[1].replace(/-/g, "+").replace(/_/g, "/"))) as { email?: string; email_verified?: boolean };
+      if (payload.email && payload.email_verified !== false) return payload.email;
+    } catch {
+      // fall through to userinfo
+    }
+  }
+  const cached = emailCache.get(token);
+  if (cached && cached.until > Date.now()) return cached.email;
+  const doc = await discovery(env);
+  if (!doc.userinfo_endpoint) return null;
+  const res = await fetch(doc.userinfo_endpoint, { headers: { Authorization: `Bearer ${token}` } });
+  if (!res.ok) return null;
+  const info = (await res.json()) as { email?: string; email_verified?: boolean };
+  const email = info.email && info.email_verified !== false ? info.email : null;
+  emailCache.set(token, { email, until: Date.now() + 10 * 60_000 });
+  return email;
 }
 
 async function telemetry(request: Request, env: Env): Promise<Response> {

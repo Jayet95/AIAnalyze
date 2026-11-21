@@ -26,6 +26,8 @@ After reinstalling (steps 2 and 3), test these:
 - **With your own key (step 7):** ask "When did my PC start crashing?" or "Compare my last two sessions of <game>". The answer should show steps such as "Searching the Event Log…" above it, and quote numbers from this PC.
 - **Lightweight check.** In Task Manager, AIAnalyze.exe should stay around 1% CPU or less while idle (the live monitor runs every 5 seconds).
 
+- **Email alerts.** Settings has a new Notifications section. Until sign-in and the server are set up, the toggle is disabled and says why. Check that the text is clear.
+
 ## Round 13 additions (test these too)
 
 - **AIAnalyze window app:** after reinstalling, **AIAnalyze** in the Start menu opens its own window (not the browser), with an icon next to the clock. Closing the window keeps the icon; right-click it for Open, Check health now, Start with Windows, Quit. Trigger an alert (for example **Check now** with a known warning) and check that a Windows notification appears while the window is closed. If it fails, send `%LocalAppData%\AIAnalyze\desktop.log`.

@@ -32,3 +32,11 @@ CREATE TABLE IF NOT EXISTS feedback (
     helpful     INTEGER NOT NULL         -- 1 or 0
 );
 CREATE INDEX IF NOT EXISTS ix_feedback_kind ON feedback (target, kind);
+
+-- Email alerts sent per user per UTC day (count only; the content is not stored).
+CREATE TABLE IF NOT EXISTS email_usage (
+    user_id TEXT    NOT NULL,
+    day     TEXT    NOT NULL,          -- YYYY-MM-DD (UTC)
+    emails  INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (user_id, day)
+);

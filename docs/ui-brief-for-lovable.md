@@ -249,14 +249,14 @@ Pause polling when `document.hidden` is true.
 > {
 >   "atUtc": "2026-11-21T19:04:05Z",
 >   "verdict": "attention",
->   "headline": "2 things need attention: FPS drop in cyberpunk2077.exe; C: filling up.",
+>   "headline": "2 things need attention: FPS drop in cyberpunk2077.exe; Drive C filling up.",
 >   "playing": { "application": "cyberpunk2077.exe", "fps": 58.4 },
 >   "now": { "cpuTemp": 71, "cpuLoad": 64, "gpuTemp": 79, "gpuLoad": 98, "memoryPercent": 71.5 },
 >   "items": [
 >     { "source": "live", "id": "fps-drop", "severity": "Warning", "title": "FPS drop in cyberpunk2077.exe",
 >       "detail": "cyberpunk2077.exe is running at 58 FPS, well below its usual 96 FPS. The GPU is fully loaded, so this part of the game is simply heavier.",
 >       "active": true, "sinceUtc": "2026-11-21T19:03:20Z", "question": "Why did my FPS drop in cyberpunk2077.exe just now?" },
->     { "source": "trend", "id": "drive-filling-c", "severity": "Warning", "title": "C: filling up",
+>     { "source": "trend", "id": "drive-filling-c", "severity": "Warning", "title": "Drive C filling up",
 >       "detail": "C: lost about 2.4 GB a day over the last two weeks and has 61 GB left: full in about 25 days at this pace.",
 >       "active": true, "sinceUtc": null, "question": "My C: drive is filling up fast. What is taking the space?" },
 >     { "source": "health", "id": "restart", "severity": "Info", "title": "Restart",
@@ -275,6 +275,16 @@ Pause polling when `document.hidden` is true.
 > - **Tool steps** in answers (already in 4.6): show each `tool` event's label as a small step line above the answer.
 > - Optional detail views: `GET /api/issues` (live issues only), `GET /api/trends` → `{ atUtc, problems: [{ id, severity, title, detail, question }], history: [{ day: "2026-11-20", values: { "gpu_temp_load": 78.5, "cpu_temp_idle": 41, "drive_free_gb:C:": 61.2 } }] }` for a "Trends" card with small line charts of temperatures under load and free space per drive (45 days).
 > - Alerts now also have kinds `Live` (message "Title: detail", raised while the problem happens) and `Trend`; show them like other alerts.
+
+## 6c. Update: email alerts (send this to Lovable as a follow-up)
+
+> Add a **Notifications** section to Settings, between Assistant and Privacy.
+>
+> - Text: "Windows notifications show problems as they happen, also while you play."
+> - Toggle **Email me about serious problems**, with the explanation "For when you're away from the PC: a failing drive, blue screens, critical heat, a drive about to fill up, or a problem building up over weeks. At most one email per problem a day and 5 a day. Sent to player@example.com. The email contains only the problem's title and description."
+> - `GET /api/notifications` → `{ "emailAlerts": false, "available": true, "email": "player@example.com", "reason": null, "dailyLimit": 5 }`. When `available` is false, disable the toggle and show `reason` under it (for example "Sign in to get email alerts. They go to your account's email address."), with a Sign in link when sign-in is configured.
+> - Turning it on or off: `POST /api/notifications` with `{ "emailAlerts": true }`. On an error (`{ "error": "..." }`), flip the toggle back and show the error as a toast.
+> - When `available`: a **Send a test email** text button → `POST /api/notifications/test`; toast "Test email sent to player@example.com." or the returned `error`.
 
 ## 7. Putting the build into the app
 

@@ -169,7 +169,7 @@
   "/api/assistant/overview": {
     "atUtc": "2026-11-21T19:04:05Z",
     "verdict": "attention",
-    "headline": "2 things need attention: FPS drop in cyberpunk2077.exe; C: filling up.",
+    "headline": "2 things need attention: FPS drop in cyberpunk2077.exe; Drive C filling up.",
     "playing": {
       "application": "cyberpunk2077.exe",
       "fps": 58.4
@@ -196,7 +196,7 @@
         "source": "trend",
         "id": "drive-filling-c",
         "severity": "Warning",
-        "title": "C: filling up",
+        "title": "Drive C filling up",
         "detail": "C: lost about 2.4 GB a day over the last two weeks and has 61 GB left: full in about 25 days at this pace.",
         "active": true,
         "sinceUtc": null,
@@ -260,7 +260,7 @@
       {
         "id": "drive-filling-c",
         "severity": "Warning",
-        "title": "C: filling up",
+        "title": "Drive C filling up",
         "detail": "C: lost about 2.4 GB a day over the last two weeks and has 61 GB left: full in about 25 days at this pace.",
         "question": "My C: drive is filling up fast. What is taking the space?"
       }

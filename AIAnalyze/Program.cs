@@ -182,6 +182,10 @@ builder.Services.AddSingleton(new AIAnalyze.Monitoring.LiveIssueEngine());
 builder.Services.AddHostedService<AIAnalyze.Monitoring.LiveMonitorService>();
 builder.Services.AddSingleton<AIAnalyze.Monitoring.TrendState>();
 builder.Services.AddHostedService<AIAnalyze.Monitoring.TrendService>();
+// Optional email alerts for serious problems (signed-in users who turn them on).
+builder.Services.AddSingleton<AIAnalyze.Notifications.EmailAlertSettings>();
+builder.Services.AddSingleton<AIAnalyze.Notifications.EmailAlertService>();
+builder.Services.AddHostedService(sp => sp.GetRequiredService<AIAnalyze.Notifications.EmailAlertService>());
 
 var app = builder.Build();
 app.UseDefaultFiles();

@@ -49,6 +49,24 @@ npx wrangler deploy
 
 Set the daily free limit with `DAILY_FREE_QUESTIONS` in `wrangler.toml` (default 30). Set a monthly spending limit on your Anthropic account as a backstop.
 
+### Optional: email alerts
+
+Users who sign in can turn on "Email me about serious problems" in the app. The app sends `POST /v1/notify` with only the problem's title and description; the Worker emails it to the account's own address (from the sign-in token or the provider's userinfo, never from the request), at most 5 a day per user, and stores only that count (`email_usage`, 60 days).
+
+1. Create an account at [Resend](https://resend.com) (free tier) and verify your domain there (it shows DNS records to add at Cloudflare).
+2. Set the sender in `wrangler.toml`, for example `EMAIL_FROM = "AIAnalyze <alerts@yourdomain.com>"`.
+3. Create a Resend API key with "sending access" only, and store it as a secret (paste it there and nowhere else):
+
+   ```bash
+   npx wrangler secret put RESEND_API_KEY
+   npx wrangler d1 execute aianalyze --remote --file=schema.sql   # adds the email_usage table
+   npx wrangler deploy
+   ```
+
+4. In the app: sign in, open Settings, turn on email alerts and click **Send a test email**.
+
+Without `RESEND_API_KEY` and `EMAIL_FROM` the route answers "not set up" and the app sends nothing. In Clerk, make sure the OAuth application's scopes include `email`, so the email address is available.
+
 ## 3. The app
 
 Put the three public values in the app's settings, either in `AIAnalyze/appsettings.json` before building (for every install) or in `C:\ProgramData\AIAnalyze\appsettings.json` on one PC:

@@ -10,7 +10,7 @@ AIAnalyze is a Windows app that checks your PC's health and explains problems. T
 ## 1. Summary
 
 - AIAnalyze measures your PC **on your PC** and stores the results **on your PC**.
-- Nothing leaves your PC unless you **sign in**, **ask the assistant a question**, or **turn on anonymous diagnostics**.
+- Nothing leaves your PC unless you **sign in**, **ask the assistant a question**, **turn on email alerts**, or **turn on anonymous diagnostics**.
 - We don't sell personal information, we don't show ads, and we don't use trackers on the app or the website.
 - AIAnalyze only reads information. It doesn't change your settings, install drivers, or delete anything.
 
@@ -54,7 +54,11 @@ If you turn on sharing in Settings, the app sends, about once a day:
 
 It **never** includes names of your files, folders or other programs, Event Log text, or chat content. Settings shows exactly what would be sent. You can turn it off at any time; we keep diagnostics for 90 days.
 
-### 3.4 The website
+### 3.4 Email alerts (off unless you turn them on)
+
+If you are signed in and turn on "Email me about serious problems" in Settings, the app sends our server the **title and description of a serious problem** it found (for example "Drive health: Windows reports ST2000DM008 as unhealthy"), and our server emails it to **your account's email address** through our email provider (Resend). The description can include hardware and program names. At most 5 emails a day. We store only a count of emails per account per day (kept 60 days), not their content. Turn it off in Settings at any time.
+
+### 3.5 The website
 
 When you visit [website address], our hosting provider (Cloudflare) processes your IP address and request details to deliver the site and protect it from abuse. Our authentication provider (Clerk) uses cookies that are needed to keep you signed in. [If enabled: we use Cloudflare Web Analytics, which doesn't use cookies or identify you.] Installer downloads are served by GitHub.
 
@@ -73,6 +77,7 @@ We use these service providers, only to run AIAnalyze:
 | Clerk | Accounts and sign-in |
 | Cloudflare | Hosting the website and our server, storing usage counters and diagnostics |
 | Anthropic | Generating the assistant's answers |
+| Resend | Sending email alerts, if you turn them on |
 | GitHub | Hosting installer downloads |
 
 We don't sell or rent personal information, and we don't share it with advertisers. We may disclose information if the law requires it.
@@ -87,6 +92,7 @@ Our providers may process information outside your country, including in the Uni
 |---|---|
 | Account | Until you delete your account |
 | Questions per day (count only) | 60 days |
+| Email alerts per day (count only) | 60 days |
 | Anonymous diagnostics and votes | 90 days |
 | Question and answer content | Not stored by us; see Anthropic's terms |
 | Website security logs | As kept by Cloudflare [confirm] |
