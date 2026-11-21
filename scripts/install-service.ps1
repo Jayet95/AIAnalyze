@@ -29,7 +29,10 @@ param(
     [switch]$RemoveApiKey,
 
     # Skip the Microsoft Defender scan of the installed files.
-    [switch]$SkipScan
+    [switch]$SkipScan,
+
+    # Keep the built-in UI instead of building the one in ui/ (needs Node.js).
+    [switch]$SkipUiBuild
 )
 
 $ErrorActionPreference = "Stop"
@@ -109,6 +112,33 @@ if ($SetApiKey) {
     @{ Claude = @{ ApiKey = $key } } | ConvertTo-Json | Set-Content -Path $secretsPath -Encoding ascii
     $key = $null
     Write-Host "Stored the API key in $secretsPath (readable only by SYSTEM and Administrators)."
+}
+
+# The UI in ui/ (built in Lovable) replaces the built-in one when Node.js is available.
+$uiDir = Join-Path $repoRoot "ui"
+if (-not $SkipUiBuild -and (Test-Path (Join-Path $uiDir "package.json"))) {
+    if (Get-Command npm -ErrorAction SilentlyContinue) {
+        Write-Host "Building the UI from $uiDir..."
+        Push-Location $uiDir
+        try {
+            npm install --no-audit --no-fund
+            if ($LASTEXITCODE -ne 0) { throw "npm install failed" }
+            npm run build:local
+            if ($LASTEXITCODE -ne 0) { throw "the UI build failed" }
+
+            $web = Join-Path $InstallDir "wwwroot"
+            Remove-Item -Recurse -Force $web -ErrorAction SilentlyContinue
+            New-Item -ItemType Directory $web | Out-Null
+            Copy-Item (Join-Path $uiDir "dist-local\*") $web -Recurse -Force
+            Write-Host "Installed the new UI."
+        } catch {
+            Write-Warning "Could not build the UI ($($_.Exception.Message)). The built-in UI is used instead."
+        } finally {
+            Pop-Location
+        }
+    } else {
+        Write-Warning "Node.js is not installed, so the built-in UI is used. Install Node.js LTS and rerun to get the new UI."
+    }
 }
 
 # Scan the installed files with Microsoft Defender before starting the service, so a detection shows up here

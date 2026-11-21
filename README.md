@@ -17,6 +17,7 @@ Everything stays on the PC. The UI is a local web page served by the service on 
 You need the .NET 10 SDK to build. Optional, for full data:
 
 - **PresentMon** for FPS capture: download `PresentMon.exe` from the official PresentMon GitHub releases.
+- **Node.js LTS** for the new UI in `ui/`: the installer builds it when Node is present, and otherwise keeps the simpler built-in UI.
 - **PawnIO** driver for CPU temperature and power: install it from <https://pawnio.eu> (signed; the LibreHardwareMonitor installer also adds it). The sensor library uses PawnIO, not the old WinRing0 driver that antivirus software flags. The installer warns if it is missing.
 
 In an elevated PowerShell (Run as administrator), from the repo root:
@@ -152,6 +153,16 @@ dotnet "C:\Program Files\AIAnalyze\AIAnalyze.dll" --health
 ## Development
 
 A brief for building a new UI (for example in Lovable), with the full API contract and sample data, is in [docs/ui-brief-for-lovable.md](docs/ui-brief-for-lovable.md).
+
+The UI built in Lovable lives in `ui/`. To build it by hand:
+
+```powershell
+cd ui
+npm install
+npm run build:local
+```
+
+Then copy the contents of `ui/dist-local` into `AIAnalyze/wwwroot` (or let the installer do it). `?mock=1` in the URL shows it with sample data. To update it from Lovable, download the project again and replace the contents of `ui/`, keeping `node_modules` out of git. The simpler UI in `AIAnalyze/wwwroot` stays as the fallback.
 
 
 ```powershell
