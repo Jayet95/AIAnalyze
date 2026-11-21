@@ -80,7 +80,7 @@ Write for the primary audience. Enthusiasts find the details on How it works.
 
 ### 4.4 Privacy (`/privacy`)
 
-Start with the plain-language summary in `installer/privacy.txt` (same facts, same words), then the full policy. The full policy and the terms need review by a lawyer before launch; until then mark them as drafts. Include: who runs the service and how to reach them; what is collected locally, what is sent and when (assistant questions, opt-in diagnostics, account email); where data is stored (Cloudflare, Clerk, Anthropic for assistant questions); retention (diagnostics 90 days, usage counters 60 days); how to delete your account and data; contact for privacy requests.
+Start with the plain-language summary in `installer/privacy.txt` (same facts, same words), then the full policy from `docs/legal/privacy-policy.md`. The terms page uses `docs/legal/terms-of-use.md`. Both are drafts until a lawyer reviews them. The full policy and the terms need review by a lawyer before launch; until then mark them as drafts. Include: who runs the service and how to reach them; what is collected locally, what is sent and when (assistant questions, opt-in diagnostics, account email); where data is stored (Cloudflare, Clerk, Anthropic for assistant questions); retention (diagnostics 90 days, usage counters 60 days); how to delete your account and data; contact for privacy requests.
 
 ### 4.5 FAQ (`/faq`)
 

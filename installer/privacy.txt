@@ -8,7 +8,7 @@ All measurements are stored on this PC in C:\ProgramData\AIAnalyze, with limits:
 
 What can leave your PC, only if you choose
 
-- Assistant questions: when you ask the assistant something, your question goes to Claude together with a summary of this PC's measurements, so it can answer about your PC.
+- Assistant questions: when you ask the assistant something, your question goes to Claude together with a summary of this PC's measurements, so it can answer about your PC. The summary can include names of programs (for example one that crashed) and short Windows event messages. Our server doesn't store the content.
 - Anonymous diagnostics: off until you turn it on. Once a day it sends hardware models, driver versions, Windows build, which checks failed, which finding types appeared, game file names and FPS, and your Helpful / Not helpful votes. Never names of your files, folders or other programs, never Event Log text, never chat content. Settings shows exactly what would be sent.
 - Signing in is optional. It opens your browser; AIAnalyze never sees your password.
 
