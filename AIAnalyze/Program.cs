@@ -74,6 +74,20 @@ if (rangeCommand is not null)
     return;
 }
 
+// Removes every saved session of one program, for example junk sessions of an overlay: --delete-sessions-by-app Surfshark.exe
+var byAppIndex = Array.IndexOf(args, "--delete-sessions-by-app");
+if (byAppIndex >= 0)
+{
+    if (byAppIndex + 1 >= args.Length)
+    {
+        Console.WriteLine("Usage: AIAnalyze --delete-sessions-by-app <program.exe>");
+        return;
+    }
+    using var appStore = new SampleStore(TelemetryPaths.DatabasePath);
+    Console.WriteLine($"Deleted sessions of {args[byAppIndex + 1]}: {appStore.DeleteSessionsOf(args[byAppIndex + 1])}");
+    return;
+}
+
 if (args.Contains("--sessions"))
 {
     // Lists recent saved sessions so one can be inspected with --timeline <id>.

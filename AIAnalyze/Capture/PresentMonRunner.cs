@@ -38,7 +38,12 @@ public sealed class PresentMonOptions
         "code.exe", "cursor.exe", "devenv.exe", "notepad.exe",
         "steamwebhelper.exe", "steam.exe", "epicgameslauncher.exe", "battle.net.exe", "galaxyclient.exe", "eadesktop.exe",
         "discord.exe", "teams.exe", "ms-teams.exe", "slack.exe", "spotify.exe", "whatsapp.exe",
-        "obs64.exe", "nvidia overlay.exe", "nvcontainer.exe", "radeonsoftware.exe", "aianalyze.desktop.exe",
+        "obs64.exe", "nvidia overlay.exe", "nvcontainer.exe", "nvidia app.exe", "radeonsoftware.exe", "aianalyze.desktop.exe",
+        // Launchers, VPN clients, tuning and RGB tools, and Windows tools: small windows, not games.
+        "ubisoftconnect.exe", "upc.exe", "riotclientux.exe", "riotclientservices.exe", "rockstarlauncher.exe", "xboxpcapp.exe",
+        "surfshark.exe", "nordvpn.exe", "protonvpn.exe", "expressvpn.exe", "mullvad vpn.exe", "openvpn-gui.exe", "wireguard.exe",
+        "msiafterburner.exe", "rtss.exe", "lghub.exe", "icue.exe", "armourycrate.exe", "signalrgb.exe",
+        "taskmgr.exe", "systemsettings.exe", "widgets.exe", "snippingtool.exe", "screenclippinghost.exe", "gamebar.exe",
     ];
 
     /// <summary>When true (default), <see cref="DefaultExcludedApplications"/> are ignored.</summary>

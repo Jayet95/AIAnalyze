@@ -19,6 +19,36 @@ public class SessionCleanupTests
         Seconds: [new FpsSecond(start.ToUnixTimeSeconds(), 60)]);
 
     [Fact]
+    public void Deleting_by_program_removes_only_that_programs_sessions()
+    {
+        var path = Path.Combine(Path.GetTempPath(), $"aianalyze-byapp-{Guid.NewGuid():N}.db");
+        try
+        {
+            using var store = new SampleStore(path);
+            var junk = store.InsertSession(Session("Surfshark.exe", Junk), "default");
+            store.InsertSession(Session("surfshark.exe", Junk.AddMinutes(1)), "default");
+            store.InsertSession(Session("game.exe", Real), "default");
+            store.SaveFeedback(junk, "x", Junk);
+
+            Assert.Equal(2, store.DeleteSessionsOf("SURFSHARK.EXE"));
+            Assert.Equal("game.exe", Assert.Single(store.ListSessions(10)).Application);
+            Assert.Empty(store.GetSessionSeconds(junk));
+            Assert.Null(store.GetFeedback(junk));
+        }
+        finally
+        {
+            SqliteConnection.ClearAllPools();
+            foreach (var file in new[] { path, path + "-wal", path + "-shm" })
+            {
+                if (File.Exists(file))
+                {
+                    File.Delete(file);
+                }
+            }
+        }
+    }
+
+    [Fact]
     public void Pruning_drops_old_alerts_and_per_second_fps_but_keeps_sessions()
     {
         var path = Path.Combine(Path.GetTempPath(), $"aianalyze-prune-{Guid.NewGuid():N}.db");

@@ -21,7 +21,11 @@ public sealed record CompletedSession(
 /// <param name="idleGap">How long an application may be silent before its session ends.</param>
 /// <param name="minFrames">Sessions with fewer frames are dropped instead of saved.</param>
 /// <param name="excludedApps">Applications to ignore completely, such as dwm.exe.</param>
-public sealed class SessionTracker(TimeSpan idleGap, int minFrames = 1, IEnumerable<string>? excludedApps = null)
+/// <param name="minSeconds">
+/// Sessions with frames in fewer distinct seconds are dropped. Small overlay windows (a VPN client, a
+/// launcher) present in short bursts; a game presents continuously, so it passes easily.
+/// </param>
+public sealed class SessionTracker(TimeSpan idleGap, int minFrames = 1, IEnumerable<string>? excludedApps = null, int minSeconds = 0)
 {
     private readonly Dictionary<string, OpenSession> _open = new(StringComparer.OrdinalIgnoreCase);
     private readonly HashSet<string> _excluded = new(excludedApps ?? [], StringComparer.OrdinalIgnoreCase);
@@ -84,7 +88,7 @@ public sealed class SessionTracker(TimeSpan idleGap, int minFrames = 1, IEnumera
     private void AddIfClosed(List<CompletedSession> closed, OpenSession session)
     {
         var completed = session.ToCompleted();
-        if (completed is not null && completed.FrameCount >= minFrames)
+        if (completed is not null && completed.FrameCount >= minFrames && completed.Seconds.Count >= minSeconds)
         {
             closed.Add(completed);
         }

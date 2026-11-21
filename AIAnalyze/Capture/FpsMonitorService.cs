@@ -27,6 +27,9 @@ public sealed class FpsMonitorService(
     // Shorter sessions are noise (a window flashing, a quick alt-tab) and are not saved.
     private const int MinFrames = 300;
 
+    /// <summary>A session must have frames in at least this many seconds (Round 13: Surfshark made 0.016 s sessions).</summary>
+    private const int MinSeconds = 20;
+
     // Wait before restarting PresentMon, so a broken setup does not spin.
     private static readonly TimeSpan RestartDelay = TimeSpan.FromSeconds(30);
 
@@ -50,7 +53,7 @@ public sealed class FpsMonitorService(
         using var store = new SampleStore(TelemetryPaths.DatabasePath);
         // Browsers, launchers, chat apps and the compositor present frames too; they never become sessions.
         var excluded = new HashSet<string>(settings.EffectiveExclusions, StringComparer.OrdinalIgnoreCase);
-        var tracker = new SessionTracker(IdleGap, MinFrames, excluded);
+        var tracker = new SessionTracker(IdleGap, MinFrames, excluded, MinSeconds);
 
         // The tracker and the store are shared by the frame reader and the idle timer.
         var gate = new object();

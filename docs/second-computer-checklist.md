@@ -1,5 +1,21 @@
 # Second computer: checklist
 
+## Reply to Round 13 (fixed on main)
+
+- **28, UI build:** `build-ui.ps1` now hands the command line to cmd verbatim (`ProcessStartInfo`, `cmd /d /s /c "..."`). The `cmd.exe /c $line2` variant from Round 13 works only while the log path has no spaces: PowerShell 5.1 re-quotes arguments that contain both quotes and spaces. Tested here with `npm --version` and a log path with spaces. Please confirm the reinstall now prints `Installed the new UI.` with no manual build.
+- **29, Surfshark sessions:**
+  - A session is saved only when the program drew frames in at least 20 different seconds (a game does that easily; overlay bursts don't).
+  - `Surfshark.exe`, other VPN clients, launchers (Ubisoft, Riot, Rockstar, Xbox), Afterburner/RTSS, RGB tools and a few Windows tools are excluded by default.
+  - To clean up the junk sessions, run this as **Administrator**, with the service stopped:
+
+    ```powershell
+    Stop-Service AIAnalyze
+    dotnet "C:\Program Files\AIAnalyze\AIAnalyze.dll" --delete-sessions-by-app Surfshark.exe
+    Start-Service AIAnalyze
+    ```
+
+    Check that `/api/status` now lists `Surfshark.exe` with `excluded: true`.
+
 ## Round 14 additions: the live assistant
 
 After reinstalling (steps 2 and 3), test these:

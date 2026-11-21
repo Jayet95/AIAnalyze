@@ -11,9 +11,18 @@ param(
 
 function Invoke-Step([string]$Exe, [string[]]$Arguments, [string]$Log) {
     # Run through cmd so npm/bun warnings on stderr don't become PowerShell errors; keep all output for the report.
-    $line = "`"$Exe`" $($Arguments -join ' ') > `"$Log`" 2>&1"
-    cmd.exe /c $line
-    return $LASTEXITCODE -eq 0
+    # The command line is handed to cmd verbatim through ProcessStartInfo: PowerShell 5.1 re-quotes native
+    # arguments that contain quotes and spaces, and cmd strips the first and last quote of "npm" ... "log",
+    # which made npm.cmd look for itself in the current folder ("Cannot find module ...\node_modules\npm\bin\
+    # npm-prefix.js"). With /s and one outer pair of quotes, cmd removes exactly that pair.
+    $psi = New-Object System.Diagnostics.ProcessStartInfo
+    $psi.FileName = "$env:SystemRoot\System32\cmd.exe"
+    $psi.Arguments = "/d /s /c `"$Exe $($Arguments -join ' ') > `"$Log`" 2>&1`""
+    $psi.WorkingDirectory = (Get-Location).Path
+    $psi.UseShellExecute = $false
+    $process = [System.Diagnostics.Process]::Start($psi)
+    $process.WaitForExit()
+    return $process.ExitCode -eq 0
 }
 
 function Invoke-Build([string]$Tool, [string]$LogDir) {

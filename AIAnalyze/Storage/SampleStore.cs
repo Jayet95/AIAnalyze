@@ -456,6 +456,33 @@ public sealed class SampleStore : IDisposable
     /// Deletes sessions that started within the range (Unix milliseconds, inclusive) and their
     /// per-second FPS rows, in one transaction. Returns the number of sessions deleted.
     /// </summary>
+    /// <summary>Deletes every session of one program (case-insensitive), with its seconds, findings and feedback.</summary>
+    public long DeleteSessionsOf(string application)
+    {
+        using var transaction = _connection.BeginTransaction();
+        foreach (var sql in new[]
+        {
+            "DELETE FROM fps_seconds WHERE session_id IN (SELECT id FROM sessions WHERE application = $app COLLATE NOCASE);",
+            "DELETE FROM session_findings WHERE session_id IN (SELECT id FROM sessions WHERE application = $app COLLATE NOCASE);",
+            "DELETE FROM session_feedback WHERE session_id IN (SELECT id FROM sessions WHERE application = $app COLLATE NOCASE);",
+        })
+        {
+            using var cmd = _connection.CreateCommand();
+            cmd.Transaction = transaction;
+            cmd.CommandText = sql;
+            cmd.Parameters.AddWithValue("$app", application);
+            cmd.ExecuteNonQuery();
+        }
+
+        using var sessions = _connection.CreateCommand();
+        sessions.Transaction = transaction;
+        sessions.CommandText = "DELETE FROM sessions WHERE application = $app COLLATE NOCASE;";
+        sessions.Parameters.AddWithValue("$app", application);
+        var deleted = sessions.ExecuteNonQuery();
+        transaction.Commit();
+        return deleted;
+    }
+
     public long DeleteSessionsBetween(long fromMs, long toMs)
     {
         using var transaction = _connection.BeginTransaction();

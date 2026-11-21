@@ -76,6 +76,35 @@ public class SessionTrackerTests
     }
 
     [Fact]
+    public void Burst_sessions_of_overlay_windows_are_dropped_but_games_are_kept()
+    {
+        // Round 13: Surfshark.exe saved 2,043 frames "in 0.016 s"; a game presents in every second.
+        var tracker = new SessionTracker(TimeSpan.FromSeconds(30), minFrames: 300, minSeconds: 20);
+        for (var i = 0; i < 2043; i++)
+        {
+            tracker.AddFrame(new FrameRecord("Surfshark.exe", i * 0.000008, 0.008), T0);
+        }
+        for (var i = 0; i < 25 * 60; i++)
+        {
+            tracker.AddFrame(new FrameRecord("game.exe", i / 60.0, 16.7), T0.AddSeconds(i / 60.0));
+        }
+
+        var saved = tracker.Finish();
+
+        Assert.Equal("game.exe", Assert.Single(saved).Application);
+        Assert.True(saved[0].Seconds.Count >= 25);
+    }
+
+    [Fact]
+    public void Vpn_clients_and_launchers_are_excluded_by_default()
+    {
+        var exclusions = new AIAnalyze.Capture.PresentMonOptions().EffectiveExclusions;
+        Assert.Contains("surfshark.exe", exclusions);
+        Assert.Contains("ubisoftconnect.exe", exclusions);
+        Assert.DoesNotContain("furmark.exe", exclusions);
+    }
+
+    [Fact]
     public void CloseIdle_ends_a_silent_application_without_any_new_frame()
     {
         var tracker = new SessionTracker(TimeSpan.FromSeconds(30));
