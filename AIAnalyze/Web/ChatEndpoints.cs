@@ -66,9 +66,15 @@ public static class ChatEndpoints
 
             try
             {
-                await foreach (var chunk in chat.StreamAnswerAsync(request.Messages!, briefing, cancel))
+                await foreach (var ev in chat.StreamAnswerAsync(request.Messages!, briefing, cancel))
                 {
-                    await Send(http, new { text = chunk }, cancel);
+                    object payload = ev switch
+                    {
+                        ChatToolCall tool => new { tool = new { name = tool.Name, label = tool.Label } },
+                        ChatText text => new { text = text.Text },
+                        _ => new { },
+                    };
+                    await Send(http, payload, cancel);
                 }
                 await Send(http, new { done = true }, cancel);
             }

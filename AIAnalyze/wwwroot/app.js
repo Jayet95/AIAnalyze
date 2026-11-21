@@ -576,9 +576,15 @@ function renderChat() {
       else bubble.textContent = m.content;
       const streaming = chat.busy && i === chat.messages.length - 1 && m.role === "assistant";
       if (streaming) bubble.classList.add("pending");
+      // What the assistant looked up on this PC while answering.
+      const steps = m.checks?.length
+        ? [el("div", { class: "tool-steps" }, ...m.checks.map((c, k) =>
+            el("div", { class: `tool-step${streaming && k === m.checks.length - 1 && m.content.length === m.checkAt ? " running" : ""}` }, c)))]
+        : [];
+      const parts = m.role === "assistant" && !m.content && !m.error && steps.length ? steps : [...steps, bubble];
       return m.role === "assistant" && !m.error && !streaming && m.content
-        ? [bubble, voteButtons("answer", "chat", m)]
-        : [bubble];
+        ? [...parts, voteButtons("answer", "chat", m)]
+        : parts;
     }));
     box.scrollTop = box.scrollHeight;
   }
@@ -625,7 +631,7 @@ async function ask(question) {
   $("#chat-input").value = "";
   renderChat();
 
-  const history = chat.messages.slice(0, -1).filter((m) => !m.error).map(({ role, content }) => ({ role, content }));
+  const history = chat.messages.slice(0, -1).filter((m) => !m.error && m.content).map(({ role, content }) => ({ role, content }));
   chat.controller = new AbortController();
   try {
     const res = await fetch("/api/chat", {
@@ -654,6 +660,7 @@ async function ask(question) {
         if (!line.startsWith("data:")) continue;
         const event = JSON.parse(line.slice(5));
         if (event.text) { answer.content += event.text; renderChat(); }
+        if (event.tool) { (answer.checks ??= []).push(event.tool.label); answer.checkAt = answer.content.length; renderChat(); }
         if (event.error) throw new Error(event.error);
       }
     }

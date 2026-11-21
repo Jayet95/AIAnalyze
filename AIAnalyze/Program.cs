@@ -146,7 +146,12 @@ builder.Services.AddSingleton<CaptureStatus>();
 builder.Services.AddSingleton<LatestSensors>();
 var claudeOptions = builder.Configuration.GetSection("Claude").Get<AIAnalyze.Chat.ClaudeOptions>() ?? new();
 builder.Services.AddSingleton(claudeOptions);
-builder.Services.AddSingleton(new AIAnalyze.Chat.ClaudeChat(claudeOptions));
+// The assistant's read-only tools over this PC's local data, used by both chat paths.
+builder.Services.AddSingleton(sp => new AIAnalyze.Chat.AssistantTools(
+    sp.GetRequiredService<CaptureStatus>(),
+    sp.GetRequiredService<AIAnalyze.Health.HealthState>(),
+    sp.GetRequiredService<LatestSensors>()));
+builder.Services.AddSingleton<AIAnalyze.Chat.ClaudeChat>();
 
 // Accounts and the AIAnalyze server (sign-in with any OpenID Connect provider, such as Clerk).
 var cloudOptions = builder.Configuration.GetSection("Cloud").Get<AIAnalyze.Account.CloudOptions>() ?? new();
@@ -161,7 +166,8 @@ builder.Services.AddSingleton(new AIAnalyze.Account.AccountStore(
 builder.Services.AddSingleton<AIAnalyze.Account.AccountService>();
 builder.Services.AddSingleton(sp => new AIAnalyze.Chat.CloudChat(
     sp.GetRequiredService<IHttpClientFactory>().CreateClient("cloud-stream"), cloudOptions,
-    sp.GetRequiredService<AIAnalyze.Account.AccountService>()));
+    sp.GetRequiredService<AIAnalyze.Account.AccountService>(),
+    sp.GetRequiredService<AIAnalyze.Chat.AssistantTools>()));
 builder.Services.AddSingleton<AIAnalyze.Chat.ChatRouter>();
 builder.Services.AddSingleton<AIAnalyze.Telemetry.PrivacySettings>();
 builder.Services.AddHostedService<AIAnalyze.Telemetry.TelemetryService>();

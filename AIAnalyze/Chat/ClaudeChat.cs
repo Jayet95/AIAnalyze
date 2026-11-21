@@ -1,5 +1,7 @@
 using System.Runtime.CompilerServices;
+using System.Text.Json;
 using Anthropic;
+using Anthropic.Helpers;
 using Anthropic.Models.Beta.Messages;
 
 namespace AIAnalyze.Chat;
@@ -27,34 +29,27 @@ public sealed class ClaudeOptions
 /// <summary>One message of the conversation as the UI sends it.</summary>
 public sealed record ChatTurn(string Role, string Content);
 
+/// <summary>Something the assistant produced while answering: answer text, or a note that it is checking something.</summary>
+public abstract record ChatEvent;
+
+public sealed record ChatText(string Text) : ChatEvent;
+
+/// <summary>The assistant called a tool. Label is a short line for the UI ("Searching the Event Log ...").</summary>
+public sealed record ChatToolCall(string Name, string Label) : ChatEvent;
+
 /// <summary>
-/// Answers questions about the PC with Claude, grounded in the app's measurements.
-/// The fixed instructions come first and are cached; the measurements change every request and follow them.
+/// Answers questions about the PC with Claude using the user's own API key. The model gets a short
+/// briefing and read-only tools over the app's local data, and this class runs the tool loop: each tool
+/// call is answered on this PC and only the tool's result goes back to the model.
 /// </summary>
-public sealed class ClaudeChat(ClaudeOptions options)
+public sealed class ClaudeChat(ClaudeOptions options, AssistantTools tools)
 {
     public const int MaxTurns = 20;
 
-    public const string Instructions = """
-        You are the assistant inside AIAnalyze, a diagnostics app running locally on the user's Windows PC.
-        With each question you receive a briefing of what the app has measured on this PC: hardware and drivers,
-        system health checks (crashes and blue screens, hardware errors, graphics driver resets, crashing
-        programs, failing services, failed updates, disk space and drive health, memory, busy programs, uptime,
-        battery), current sensor readings, recent alerts, recent game sessions with their findings, and, when
-        the user has one open, a summary of a single session. Use it to help with any hardware or software
-        problem on this PC: slowness, freezes, crashes, errors, noise and heat, storage, updates, drivers, and
-        performance in games and other programs.
+    /// <summary>Model calls per question. Each round can call several tools at once.</summary>
+    public const int MaxSteps = 8;
 
-        - Reply in the language the user writes in.
-        - Base every claim on the briefing and quote the numbers you rely on. When the briefing does not show
-          something, say so and say what would show it, rather than guessing.
-        - Write for a gamer, not an engineer: lead with the answer, then the evidence, then what to do.
-        - Suggest concrete steps the user can take themselves, such as in-game settings, cooling, power plan,
-          closing background programs, or updating a driver from the vendor's official site. Mention a restore
-          point before driver changes.
-        - The app only reads data. It cannot change settings or install anything, so never say you changed something.
-        - Keep it short: a few sentences or a short list, unless the user asks for more detail.
-        """;
+    public static string Instructions => AssistantTools.Instructions;
 
     public bool IsConfigured => options.IsConfigured;
 
@@ -68,18 +63,24 @@ public sealed class ClaudeChat(ClaudeOptions options)
         or two things worth doing. Write in {options.FeedbackLanguage}. At most five sentences or a short list.
         """;
 
-    /// <summary>Asks one question and returns the whole answer.</summary>
-    public async Task<string> AnswerAsync(string question, string briefing, CancellationToken cancellationToken)
-    {
-        var answer = new System.Text.StringBuilder();
-        await foreach (var chunk in StreamAnswerAsync([new ChatTurn("user", question)], briefing, cancellationToken))
+    private static readonly IReadOnlyList<BetaToolUnion> ToolParams = AssistantTools.Definitions
+        .Select(d => (BetaToolUnion)new BetaTool
         {
-            answer.Append(chunk);
-        }
-        return answer.ToString().Trim();
-    }
+            Name = d.Name,
+            Description = d.Description,
+            InputSchema = new InputSchema
+            {
+                Properties = d.InputSchema.TryGetProperty("properties", out var p)
+                    ? p.EnumerateObject().ToDictionary(x => x.Name, x => x.Value.Clone())
+                    : new Dictionary<string, JsonElement>(),
+                Required = d.InputSchema.TryGetProperty("required", out var r)
+                    ? r.EnumerateArray().Select(x => x.GetString()!).ToList()
+                    : null,
+            },
+        })
+        .ToList();
 
-    public async IAsyncEnumerable<string> StreamAnswerAsync(
+    public async IAsyncEnumerable<ChatEvent> StreamAnswerAsync(
         IReadOnlyList<ChatTurn> turns,
         string briefing,
         [EnumeratorCancellation] CancellationToken cancellationToken)
@@ -94,37 +95,84 @@ public sealed class ClaudeChat(ClaudeOptions options)
                 : new BetaMessageParam(new BetaUserMessageParam { Content = turn.Content }));
         }
 
-        var parameters = new MessageCreateParams
+        for (var step = 0; step < MaxSteps; step++)
         {
-            Model = options.Model,
-            MaxTokens = 8000,
-            Betas = ["server-side-fallback-2026-07-01"],
-            Fallbacks = new Default(),
-            OutputConfig = new BetaOutputConfig { Effort = Effort.Medium },
-            System = new List<BetaTextBlockParam>
+            var lastStep = step == MaxSteps - 1;
+            var parameters = new MessageCreateParams
             {
-                new() { Text = Instructions, CacheControl = new BetaCacheControlEphemeral() },
-                new() { Text = "Briefing of what the app has measured:\n\n" + briefing },
-            },
-            Messages = messages,
-        };
+                Model = options.Model,
+                MaxTokens = 8000,
+                Betas = ["server-side-fallback-2026-07-01"],
+                Fallbacks = new Default(),
+                OutputConfig = new BetaOutputConfig { Effort = Effort.Medium },
+                System = new List<BetaTextBlockParam>
+                {
+                    // Tools and instructions never change: cached across questions. The briefing changes per
+                    // question: cached across the tool steps of one question.
+                    new() { Text = Instructions, CacheControl = new BetaCacheControlEphemeral() },
+                    new() { Text = "Briefing of what the app has measured:\n\n" + briefing, CacheControl = new BetaCacheControlEphemeral() },
+                },
+                Tools = ToolParams.ToList(),
+                // On the last allowed step the model must answer with what it has.
+                ToolChoice = lastStep ? new BetaToolChoiceNone() : null,
+                Messages = messages,
+            };
 
-        string? stopReason = null;
-        await foreach (var ev in client.Beta.Messages.CreateStreaming(parameters, cancellationToken))
-        {
-            if (ev.TryPickContentBlockDelta(out var delta) && delta.Delta.TryPickText(out var text))
+            var aggregator = new BetaMessageContentAggregator();
+            await foreach (var ev in aggregator.CollectAsync(client.Beta.Messages.CreateStreaming(parameters, cancellationToken)))
             {
-                yield return text.Text;
+                if (ev.TryPickContentBlockDelta(out var delta) && delta.Delta.TryPickText(out var text))
+                {
+                    yield return new ChatText(text.Text);
+                }
             }
-            else if (ev.TryPickDelta(out var messageDelta) && messageDelta.Delta.StopReason is { } reason)
-            {
-                stopReason = reason.ToString();
-            }
-        }
 
-        if (stopReason is not null && stopReason.Contains("refusal", StringComparison.OrdinalIgnoreCase))
-        {
-            yield return "\n\n(The assistant declined to answer this question.)";
+            var message = aggregator.Message();
+            var stopReason = message.StopReason?.ToString() ?? "";
+            if (stopReason.Contains("refusal", StringComparison.OrdinalIgnoreCase))
+            {
+                yield return new ChatText("\n\n(The assistant declined to answer this question.)");
+                yield break;
+            }
+
+            var assistantContent = new List<BetaContentBlockParam>();
+            var results = new List<BetaContentBlockParam>();
+            foreach (var block in message.Content)
+            {
+                if (block.TryPickText(out var text))
+                {
+                    assistantContent.Add(new BetaTextBlockParam { Text = text.Text });
+                }
+                else if (block.TryPickThinking(out var thinking))
+                {
+                    assistantContent.Add(new BetaThinkingBlockParam { Thinking = thinking.Thinking, Signature = thinking.Signature });
+                }
+                else if (block.TryPickRedactedThinking(out var redacted))
+                {
+                    assistantContent.Add(new BetaRedactedThinkingBlockParam { Data = redacted.Data });
+                }
+                else if (block.TryPickToolUse(out var toolUse))
+                {
+                    assistantContent.Add(new BetaToolUseBlockParam { ID = toolUse.ID, Name = toolUse.Name, Input = toolUse.Input });
+                    var input = JsonSerializer.SerializeToElement(toolUse.Input);
+                    yield return new ChatToolCall(toolUse.Name, AssistantTools.Describe(toolUse.Name, input));
+                    var output = await Task.Run(() => tools.Run(toolUse.Name, input), cancellationToken);
+                    results.Add(new BetaToolResultBlockParam { ToolUseID = toolUse.ID, Content = output });
+                }
+            }
+
+            if (results.Count == 0)
+            {
+                yield break;
+            }
+
+            // Separate the text written before the tool calls from the answer that follows them.
+            if (assistantContent.Any(b => b.TryPickText(out _)))
+            {
+                yield return new ChatText("\n\n");
+            }
+            messages.Add(new BetaMessageParam(new BetaAssistantMessageParam { Content = assistantContent }));
+            messages.Add(new BetaMessageParam(new BetaUserMessageParam { Content = results }));
         }
     }
 }

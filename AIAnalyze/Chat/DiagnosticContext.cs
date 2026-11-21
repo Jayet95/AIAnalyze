@@ -44,7 +44,7 @@ public static class DiagnosticContext
         return sb.ToString();
     }
 
-    private static void AppendSpecs(StringBuilder sb, SampleStore store)
+    internal static void AppendSpecs(StringBuilder sb, SampleStore store)
     {
         sb.AppendLine("## This PC");
         if (store.GetLatestSpecs() is not { } s)
@@ -142,7 +142,7 @@ public static class DiagnosticContext
         sb.AppendLine();
     }
 
-    private static void AppendCooling(StringBuilder sb, Sensors.CoolingReport? cooling)
+    internal static void AppendCooling(StringBuilder sb, Sensors.CoolingReport? cooling)
     {
         if (cooling is null)
         {
@@ -205,7 +205,7 @@ public static class DiagnosticContext
         sb.AppendLine();
     }
 
-    private static void AppendFocus(StringBuilder sb, SessionReport report)
+    internal static void AppendFocus(StringBuilder sb, SessionReport report)
     {
         var s = report.Session;
         sb.AppendLine($"## The session the user is looking at: session {s.Id}");
@@ -249,7 +249,7 @@ public static class DiagnosticContext
         sb.AppendLine();
     }
 
-    private static string? SummarizeColumn(IReadOnlyList<TimelineRow> rows, string label)
+    internal static string? SummarizeColumn(IReadOnlyList<TimelineRow> rows, string label)
     {
         var values = rows.Select(r => r.Metrics[label]).Where(v => v is not null).Select(v => v!.Value).OrderBy(v => v).ToList();
         return values.Count == 0
@@ -257,13 +257,13 @@ public static class DiagnosticContext
             : $"{label} min {values[0]:0.#}, median {Pct(values, 0.5):0.#}, max {values[^1]:0.#}";
     }
 
-    private static double Pct(IReadOnlyList<double> sorted, double p) =>
+    internal static double Pct(IReadOnlyList<double> sorted, double p) =>
         sorted[(int)Math.Clamp(Math.Round(p * (sorted.Count - 1)), 0, sorted.Count - 1)];
 
-    private static string Format(double? value) => value is null ? "n/a" : value.Value.ToString("0.#", CultureInfo.InvariantCulture);
+    internal static string Format(double? value) => value is null ? "n/a" : value.Value.ToString("0.#", CultureInfo.InvariantCulture);
 
-    private static string Local(DateTimeOffset utc) => utc.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture);
+    internal static string Local(DateTimeOffset utc) => utc.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture);
 
-    private static string Duration(TimeSpan d) =>
+    internal static string Duration(TimeSpan d) =>
         d.TotalMinutes >= 60 ? $"{(int)d.TotalHours}h {d.Minutes}m" : d.TotalSeconds >= 60 ? $"{(int)d.TotalMinutes}m {d.Seconds}s" : $"{d.Seconds}s";
 }

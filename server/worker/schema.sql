@@ -2,10 +2,12 @@
 --   npx wrangler d1 execute aianalyze --remote --file=schema.sql
 
 -- Questions asked per user per UTC day, for the free daily quota.
+-- A database created before tool steps existed needs: ALTER TABLE usage ADD COLUMN steps INTEGER NOT NULL DEFAULT 0;
 CREATE TABLE IF NOT EXISTS usage (
     user_id   TEXT    NOT NULL,
     day       TEXT    NOT NULL,          -- YYYY-MM-DD (UTC)
     questions INTEGER NOT NULL DEFAULT 0,
+    steps     INTEGER NOT NULL DEFAULT 0,  -- tool rounds after a question (a separate, larger quota)
     PRIMARY KEY (user_id, day)
 );
 

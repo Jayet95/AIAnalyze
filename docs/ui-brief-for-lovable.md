@@ -14,7 +14,7 @@ Sample responses for every endpoint are in [`ui-fixtures.json`](ui-fixtures.json
 >
 > Feel: a calm, trustworthy check-up for your PC, like a good health or banking app, not a gamer RGB dashboard. Plain language, status first, one primary action per screen, generous spacing, dark and light themes following the system setting. Severity colors mean something: green OK, blue info, amber warning, red critical, and nothing is red unless it's a problem.
 >
-> The chat streams answers from `POST /api/chat` as server-sent events (`data: {"text": "..."}` chunks, then `data: {"done": true}` or `data: {"error": "..."}`). User and assistant messages use `dir="auto"` so Hebrew and Arabic display right-to-left.
+> The chat streams answers from `POST /api/chat` as server-sent events (`data: {"text": "..."}` chunks, `data: {"tool": {"name": "...", "label": "..."}}` when the assistant looks something up on the PC, then `data: {"done": true}` or `data: {"error": "..."}`). User and assistant messages use `dir="auto"` so Hebrew and Arabic display right-to-left.
 >
 > No external requests at runtime: bundle fonts and icons, no CDNs, no analytics, no remote images. Use the exact API shapes in `fixtures.json`.
 
@@ -177,7 +177,7 @@ Data: `GET /api/specs` (404 before the first start). Cards: computer (`computerM
 - Context line under the title: "Uses this PC's measurements", or "Includes session 12 in detail" when `sessionId` is set.
 - Messages: user right, assistant left, `dir="auto"`. Stream tokens into the assistant bubble with a blinking caret. Render simple Markdown. **New** clears the conversation (and aborts a running answer). Keep the conversation in `sessionStorage`.
 - Send: `POST /api/chat` with `{ "messages": [{ "role": "user"|"assistant", "content": "..." }], "sessionId": 12 | null }`. Last message must be the user's; at most 20 messages, each 1–4000 characters.
-- Response: `text/event-stream`. Split on blank lines; each event is `data: <json>`: `{ "text": "..." }` (append), `{ "done": true }` (finished), `{ "error": "..." }` (show as an error bubble). Before streaming starts, errors come back as JSON `{ "error": "..." }` with status 400 (bad input), 403 (wrong origin) or 503 (no API key).
+- Response: `text/event-stream`. Split on blank lines; each event is `data: <json>`: `{ "text": "..." }` (append), `{ "tool": { "name": "search_event_log", "label": "Searching the Event Log (crash and unexpected shutdown, last 7 days)" } }` (the assistant is checking something on this PC: show the label as a small step line above the answer, with a spinner until the next event, then a check mark; an answer can have several), `{ "done": true }` (finished), `{ "error": "..." }` (show as an error bubble). Before streaming starts, errors come back as JSON `{ "error": "..." }` with status 400 (bad input), 403 (wrong origin) or 503 (no API key).
 
 ### 4.7 Alerts
 

@@ -1,10 +1,13 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { createRemoteJWKSet, jwtVerify } from "jose";
+import INSTRUCTIONS from "../../../AIAnalyze/Chat/Assistant/instructions.txt";
+import TOOLS from "../../../AIAnalyze/Chat/Assistant/tools.json";
 
 /**
  * AIAnalyze API.
  *   GET  /v1/me         signed-in user's quota
- *   POST /v1/chat       relay a question to Claude with the operator's API key (signed-in, daily quota)
+ *   POST /v1/chat       one model call for a question, with the app's tools (signed-in, daily quota);
+ *                       the app runs the tools on the PC and sends their results in the next call
  *   POST /v1/telemetry  opt-in diagnostics snapshot and feedback votes (anonymous or signed-in)
  */
 export interface Env {
@@ -18,35 +21,27 @@ export interface Env {
   SITE_ORIGIN?: string;
 }
 
-const MAX_MESSAGES = 20;
+const MAX_MESSAGES = 60; // 20 conversation turns plus the tool steps of the current question
 const MAX_MESSAGE_CHARS = 4000;
+const MAX_BLOCK_CHARS = 20_000; // one tool result or assistant text block
+const MAX_THINKING_CHARS = 200_000;
 const MAX_BRIEFING_CHARS = 60_000;
+const MAX_CHAT_BYTES = 768 * 1024;
 const MAX_TELEMETRY_BYTES = 64 * 1024;
 const MAX_TELEMETRY_PER_DEVICE_PER_DAY = 50;
+/** Model calls per question; must match ClaudeChat.MaxSteps in the app. */
+const MAX_STEPS = 8;
+/** Tool steps a user may spend per day, per free question. */
+const STEPS_PER_QUESTION = 6;
 
-// Kept in sync with AIAnalyze/Chat/ClaudeChat.cs. The server owns the instructions, so a modified client
-// cannot turn the relay into a general-purpose assistant on the operator's key.
-const INSTRUCTIONS = `You are the assistant inside AIAnalyze, a diagnostics app running locally on the user's Windows PC.
-With each question you receive a briefing of what the app has measured on this PC: hardware and drivers,
-system health checks (crashes and blue screens, hardware errors, graphics driver resets, crashing
-programs, failing services, failed updates, disk space and drive health, memory, busy programs, uptime,
-battery), current sensor readings, recent alerts, recent game sessions with their findings, and, when
-the user has one open, a summary of a single session. Use it to help with any hardware or software
-problem on this PC: slowness, freezes, crashes, errors, noise and heat, storage, updates, drivers, and
-performance in games and other programs.
+// The instructions and tool definitions are the same files the app embeds (AIAnalyze/Chat/Assistant).
+// The server owns them, so a modified client cannot turn the relay into a general-purpose assistant
+// on the operator's key or add tools of its own.
+const TOOL_NAMES = new Set((TOOLS as { name: string }[]).map((t) => t.name));
+const ASSISTANT_BLOCKS = new Set(["text", "tool_use", "thinking", "redacted_thinking"]);
 
-- Reply in the language the user writes in.
-- Base every claim on the briefing and quote the numbers you rely on. When the briefing does not show
-  something, say so and say what would show it, rather than guessing.
-- Write for a gamer, not an engineer: lead with the answer, then the evidence, then what to do.
-- Suggest concrete steps the user can take themselves, such as in-game settings, cooling, power plan,
-  closing background programs, or updating a driver from the vendor's official site. Mention a restore
-  point before driver changes.
-- The app only reads data. It cannot change settings or install anything, so never say you changed something.
-- Keep it short: a few sentences or a short list, unless the user asks for more detail.
-- Only help with this PC and its software. Politely decline unrelated requests.`;
-
-type ChatTurn = { role: "user" | "assistant"; content: string };
+type Block = Record<string, unknown> & { type: string };
+type ChatMessage = { role: "user" | "assistant"; content: string | Block[] };
 
 export default {
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
@@ -89,18 +84,21 @@ async function me(request: Request, env: Env): Promise<Response> {
 
 async function chat(request: Request, env: Env): Promise<Response> {
   const userId = await requireUser(request, env);
-  const body = await readJson<{ messages?: ChatTurn[]; briefing?: string }>(request, 256 * 1024);
-  const messages = validateMessages(body.messages);
+  const body = await readJson<{ messages?: ChatMessage[]; briefing?: string }>(request, MAX_CHAT_BYTES);
+  const { messages, steps } = validateMessages(body.messages);
   const briefing = typeof body.briefing === "string" ? body.briefing.slice(0, MAX_BRIEFING_CHARS) : "";
 
-  // Count the question atomically; no row back means today's quota is used up.
+  // A new question counts against the daily question quota; the tool steps that follow it count
+  // against a larger step quota, so a question that needs several tool rounds costs one question.
+  const column = steps === 0 ? "questions" : "steps";
+  const limit = steps === 0 ? dailyLimit(env) : dailyLimit(env) * STEPS_PER_QUESTION;
   const counted = await env.DB.prepare(
-    `INSERT INTO usage (user_id, day, questions) VALUES (?1, ?2, 1)
-     ON CONFLICT (user_id, day) DO UPDATE SET questions = questions + 1 WHERE questions < ?3
-     RETURNING questions`,
+    `INSERT INTO usage (user_id, day, ${column}) VALUES (?1, ?2, 1)
+     ON CONFLICT (user_id, day) DO UPDATE SET ${column} = ${column} + 1 WHERE ${column} < ?3
+     RETURNING ${column} AS n`,
   )
-    .bind(userId, today(), dailyLimit(env))
-    .first<{ questions: number }>();
+    .bind(userId, today(), limit)
+    .first<{ n: number }>();
   if (!counted) {
     return json({ error: `You've used today's ${dailyLimit(env)} free questions. They reset at midnight UTC.` }, 429);
   }
@@ -113,16 +111,20 @@ async function chat(request: Request, env: Env): Promise<Response> {
   const stream = new ReadableStream<Uint8Array>({
     async start(controller) {
       try {
-        // Server-side fallback re-serves a declined request on another model inside the same call.
+        // Tools and instructions never change and are cached across questions; the briefing is cached
+        // across the tool steps of one question. Server-side fallback re-serves a declined request on
+        // another model inside the same call. On the last allowed step the model must answer.
         const params = {
           model: env.MODEL || "claude-opus-5-5",
           max_tokens: 8000,
           betas: ["server-side-fallback-2026-07-01"],
           fallbacks: "default",
           output_config: { effort: "medium" },
+          tools: TOOLS,
+          ...(steps >= MAX_STEPS - 1 ? { tool_choice: { type: "none" } } : {}),
           system: [
-            { type: "text", text: INSTRUCTIONS, cache_control: { type: "ephemeral" } },
-            { type: "text", text: `Briefing of what the app has measured:\n\n${briefing}` },
+            { type: "text", text: INSTRUCTIONS.trim(), cache_control: { type: "ephemeral" } },
+            { type: "text", text: `Briefing of what the app has measured:\n\n${briefing}`, cache_control: { type: "ephemeral" } },
           ],
           messages,
         } as unknown as Anthropic.Beta.Messages.MessageCreateParamsStreaming;
@@ -137,6 +139,10 @@ async function chat(request: Request, env: Env): Promise<Response> {
         if (final.stop_reason === "refusal") {
           send(controller, { text: "\n\n(The assistant declined to answer this question.)" });
         }
+        // The app needs the whole assistant turn (tool calls, and thinking with its signature) to run the
+        // tools and send it back unchanged with their results.
+        const content = (final.content as unknown as Block[]).filter((b) => ASSISTANT_BLOCKS.has(b.type));
+        send(controller, { assistant: content, stop_reason: final.stop_reason });
         send(controller, { done: true });
       } catch (err) {
         console.error(err);
@@ -274,24 +280,98 @@ async function optionalUser(request: Request, env: Env): Promise<string | null> 
   }
 }
 
-// ------------------------------------------------------------------ helpers
+// ------------------------------------------------------------------ chat validation
 
-function validateMessages(raw: ChatTurn[] | undefined): ChatTurn[] {
-  if (!Array.isArray(raw) || raw.length === 0) throw new HttpError(400, "Ask a question first.");
-  const messages = raw.slice(-MAX_MESSAGES);
-  for (const m of messages) {
-    if ((m.role !== "user" && m.role !== "assistant") || typeof m.content !== "string") {
-      throw new HttpError(400, "Messages must come from the user or the assistant.");
+/**
+ * Checks the conversation the app sends. Earlier turns are plain text. The current question may be
+ * followed by tool steps: an assistant turn with tool calls (as this server returned it), then a user
+ * turn with exactly one result per call. Returns the messages and how many tool steps follow the question.
+ */
+function validateMessages(raw: ChatMessage[] | undefined): { messages: ChatMessage[]; steps: number } {
+  const bad = (message: string) => new HttpError(400, message);
+  if (!Array.isArray(raw) || raw.length === 0) throw bad("Ask a question first.");
+  if (raw.length > MAX_MESSAGES) throw bad("The conversation is too long.");
+
+  const messages: ChatMessage[] = [];
+  let pendingToolIds: string[] | null = null;
+  for (const m of raw) {
+    if (m?.role !== "user" && m?.role !== "assistant") throw bad("Messages must come from the user or the assistant.");
+    const expected = messages.length % 2 === 0 ? "user" : "assistant";
+    if (m.role !== expected) throw bad("The conversation must start with the user and alternate.");
+
+    if (typeof m.content === "string") {
+      if (m.content.length === 0 || m.content.length > MAX_MESSAGE_CHARS) {
+        throw bad(`Messages must be between 1 and ${MAX_MESSAGE_CHARS} characters.`);
+      }
+      if (pendingToolIds) throw bad("Tool calls must be answered with their results.");
+      messages.push({ role: m.role, content: m.content });
+      continue;
     }
-    if (m.content.length === 0 || m.content.length > MAX_MESSAGE_CHARS) {
-      throw new HttpError(400, `Messages must be between 1 and ${MAX_MESSAGE_CHARS} characters.`);
+    if (!Array.isArray(m.content) || m.content.length === 0 || m.content.length > 20) throw bad("Invalid message content.");
+
+    if (m.role === "assistant") {
+      const blocks = m.content.map(checkAssistantBlock);
+      const ids = blocks.filter((b) => b.type === "tool_use").map((b) => b.id as string);
+      pendingToolIds = ids.length > 0 ? ids : null;
+      messages.push({ role: "assistant", content: blocks });
+    } else {
+      if (!pendingToolIds) throw bad("Tool results must follow the assistant's tool calls.");
+      const results = m.content.map(checkToolResult);
+      const got = results.map((r) => r.tool_use_id as string).sort().join(",");
+      if (got !== [...pendingToolIds].sort().join(",")) throw bad("Every tool call needs exactly one result.");
+      pendingToolIds = null;
+      messages.push({ role: "user", content: results });
     }
   }
-  if (messages[0].role !== "user" || messages[messages.length - 1].role !== "user") {
-    throw new HttpError(400, "The conversation must start and end with the user's message.");
+
+  if (messages[messages.length - 1].role !== "user" || pendingToolIds) {
+    throw bad("The conversation must end with the user's message or tool results.");
   }
-  return messages.map((m) => ({ role: m.role, content: m.content }));
+
+  // Tool steps since the question: assistant turns after the last plain user message.
+  let lastQuestion = -1;
+  messages.forEach((m, i) => {
+    if (m.role === "user" && typeof m.content === "string") lastQuestion = i;
+  });
+  if (lastQuestion < 0) throw bad("Ask a question first.");
+  if (messages.slice(0, lastQuestion).some((m) => typeof m.content !== "string")) {
+    throw bad("Only the current question may include tool steps.");
+  }
+  const steps = messages.slice(lastQuestion).filter((m) => m.role === "assistant").length;
+  if (steps >= MAX_STEPS) throw bad("This question needed too many steps. Ask it again more specifically.");
+  return { messages, steps };
 }
+
+function checkAssistantBlock(b: Block): Block {
+  const bad = new HttpError(400, "Invalid assistant content.");
+  if (!b || typeof b !== "object") throw bad;
+  switch (b.type) {
+    case "text":
+      if (typeof b.text !== "string" || b.text.length > MAX_BLOCK_CHARS) throw bad;
+      return { type: "text", text: b.text };
+    case "tool_use":
+      if (typeof b.id !== "string" || typeof b.name !== "string" || !TOOL_NAMES.has(b.name)) throw bad;
+      if (typeof b.input !== "object" || b.input === null || JSON.stringify(b.input).length > 2000) throw bad;
+      return { type: "tool_use", id: b.id, name: b.name, input: b.input };
+    case "thinking":
+      if (typeof b.thinking !== "string" || typeof b.signature !== "string" || b.thinking.length > MAX_THINKING_CHARS) throw bad;
+      return { type: "thinking", thinking: b.thinking, signature: b.signature };
+    case "redacted_thinking":
+      if (typeof b.data !== "string" || b.data.length > MAX_THINKING_CHARS) throw bad;
+      return { type: "redacted_thinking", data: b.data };
+    default:
+      throw bad;
+  }
+}
+
+function checkToolResult(b: Block): Block {
+  if (!b || b.type !== "tool_result" || typeof b.tool_use_id !== "string" || typeof b.content !== "string" || b.content.length > MAX_BLOCK_CHARS) {
+    throw new HttpError(400, "Invalid tool result.");
+  }
+  return { type: "tool_result", tool_use_id: b.tool_use_id, content: b.content };
+}
+
+// ------------------------------------------------------------------ helpers
 
 async function readJson<T>(request: Request, maxBytes: number): Promise<T> {
   const length = Number(request.headers.get("Content-Length") ?? "0");

@@ -1,7 +1,7 @@
 using System.Net;
-using System.Net.Http.Json;
 using System.Runtime.CompilerServices;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using AIAnalyze.Account;
 
 namespace AIAnalyze.Chat;
@@ -14,17 +14,86 @@ public sealed class ChatServiceException(string message, HttpStatusCode? status 
 
 /// <summary>
 /// Asks questions through the AIAnalyze server for a signed-in user. The server holds the Anthropic key,
-/// owns the assistant's instructions and enforces the daily free quota; it streams the same events as the
-/// local endpoint ({text}, {done}, {error}).
+/// owns the assistant's instructions and tool definitions, and enforces the daily free quota. Each request
+/// is one model call: when the model asks for tools, this class runs them on this PC and sends only their
+/// results back in the next request, so the PC's data never leaves except what the model asked for.
+/// Events from the server: {text}, {tool}, {assistant, stop_reason}, {done}, {error}.
 /// </summary>
-public sealed class CloudChat(HttpClient http, CloudOptions options, AccountService account)
+public sealed class CloudChat(HttpClient http, CloudOptions options, AccountService account, AssistantTools tools)
 {
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
 
     public bool IsAvailable => options.ApiConfigured && account.SignedIn;
 
-    public async IAsyncEnumerable<string> StreamAnswerAsync(
+    public async IAsyncEnumerable<ChatEvent> StreamAnswerAsync(
         IReadOnlyList<ChatTurn> turns,
+        string briefing,
+        [EnumeratorCancellation] CancellationToken cancellationToken)
+    {
+        var messages = new JsonArray();
+        foreach (var turn in turns.TakeLast(ClaudeChat.MaxTurns))
+        {
+            messages.Add(new JsonObject { ["role"] = turn.Role, ["content"] = turn.Content });
+        }
+
+        for (var step = 0; step < ClaudeChat.MaxSteps; step++)
+        {
+            JsonNode? assistant = null;
+            string? stopReason = null;
+            await foreach (var (kind, payload) in SendAsync(messages, briefing, cancellationToken))
+            {
+                switch (kind)
+                {
+                    case "text":
+                        yield return new ChatText(payload.GetString() ?? "");
+                        break;
+                    case "assistant":
+                        assistant = JsonNode.Parse(payload.GetRawText());
+                        break;
+                    case "stop_reason":
+                        stopReason = payload.GetString();
+                        break;
+                }
+            }
+
+            if (stopReason != "tool_use" || assistant is not JsonArray content)
+            {
+                yield break;
+            }
+
+            var results = new JsonArray();
+            var wroteText = false;
+            foreach (var block in content)
+            {
+                var type = block?["type"]?.GetValue<string>();
+                wroteText |= type == "text";
+                if (type != "tool_use")
+                {
+                    continue;
+                }
+                var id = block!["id"]!.GetValue<string>();
+                var name = block["name"]!.GetValue<string>();
+                var input = JsonSerializer.SerializeToElement(block["input"] ?? new JsonObject());
+                yield return new ChatToolCall(name, AssistantTools.Describe(name, input));
+                var output = await Task.Run(() => tools.Run(name, input), cancellationToken);
+                results.Add(new JsonObject { ["type"] = "tool_result", ["tool_use_id"] = id, ["content"] = output });
+            }
+            if (results.Count == 0)
+            {
+                yield break;
+            }
+            if (wroteText)
+            {
+                yield return new ChatText("\n\n");
+            }
+            messages.Add(new JsonObject { ["role"] = "assistant", ["content"] = content.DeepClone() });
+            messages.Add(new JsonObject { ["role"] = "user", ["content"] = results });
+        }
+    }
+
+    /// <summary>One model call through the server, as (event kind, value) pairs.</summary>
+    private async IAsyncEnumerable<(string Kind, JsonElement Value)> SendAsync(
+        JsonArray messages,
         string briefing,
         [EnumeratorCancellation] CancellationToken cancellationToken)
     {
@@ -33,7 +102,10 @@ public sealed class CloudChat(HttpClient http, CloudOptions options, AccountServ
 
         using var request = new HttpRequestMessage(HttpMethod.Post, $"{options.ApiBaseUrl.TrimEnd('/')}/v1/chat")
         {
-            Content = JsonContent.Create(new { messages = turns.TakeLast(ClaudeChat.MaxTurns), briefing }, options: Json),
+            Content = new StringContent(
+                new JsonObject { ["messages"] = messages.DeepClone(), ["briefing"] = briefing }.ToJsonString(),
+                System.Text.Encoding.UTF8,
+                "application/json"),
         };
         request.Headers.Authorization = new("Bearer", token);
 
@@ -54,17 +126,20 @@ public sealed class CloudChat(HttpClient http, CloudOptions options, AccountServ
             }
             using var doc = JsonDocument.Parse(line[5..]);
             var root = doc.RootElement;
-            if (root.TryGetProperty("text", out var text) && text.GetString() is { } chunk)
-            {
-                yield return chunk;
-            }
-            else if (root.TryGetProperty("error", out var err))
+            if (root.TryGetProperty("error", out var err))
             {
                 throw new ChatServiceException(err.GetString() ?? "The assistant could not answer.");
             }
-            else if (root.TryGetProperty("done", out _))
+            if (root.TryGetProperty("done", out _))
             {
                 yield break;
+            }
+            foreach (var kind in (string[])["text", "assistant", "stop_reason"])
+            {
+                if (root.TryGetProperty(kind, out var value))
+                {
+                    yield return (kind, value.Clone());
+                }
             }
         }
     }
@@ -105,7 +180,7 @@ public sealed class ChatRouter(ClaudeChat local, CloudChat cloud, ClaudeOptions 
 
     public string FeedbackQuestion => local.FeedbackQuestion;
 
-    public IAsyncEnumerable<string> StreamAnswerAsync(IReadOnlyList<ChatTurn> turns, string briefing, CancellationToken cancellationToken) =>
+    public IAsyncEnumerable<ChatEvent> StreamAnswerAsync(IReadOnlyList<ChatTurn> turns, string briefing, CancellationToken cancellationToken) =>
         Mode switch
         {
             ChatMode.Account => cloud.StreamAnswerAsync(turns, briefing, cancellationToken),
@@ -116,9 +191,12 @@ public sealed class ChatRouter(ClaudeChat local, CloudChat cloud, ClaudeOptions 
     public async Task<string> AnswerAsync(string question, string briefing, CancellationToken cancellationToken)
     {
         var answer = new System.Text.StringBuilder();
-        await foreach (var chunk in StreamAnswerAsync([new ChatTurn("user", question)], briefing, cancellationToken))
+        await foreach (var ev in StreamAnswerAsync([new ChatTurn("user", question)], briefing, cancellationToken))
         {
-            answer.Append(chunk);
+            if (ev is ChatText text)
+            {
+                answer.Append(text.Text);
+            }
         }
         return answer.ToString().Trim();
     }

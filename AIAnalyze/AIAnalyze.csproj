@@ -28,6 +28,12 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- Assistant instructions and tool definitions, shared with the account server (server/worker imports the same files). -->
+    <EmbeddedResource Include="Chat\Assistant\instructions.txt" LogicalName="AIAnalyze.Assistant.instructions.txt" />
+    <EmbeddedResource Include="Chat\Assistant\tools.json" LogicalName="AIAnalyze.Assistant.tools.json" />
+  </ItemGroup>
+
+  <ItemGroup>
     <PackageReference Include="Anthropic" Version="13.1.0" />
     <PackageReference Include="LibreHardwareMonitorLib" Version="0.9.6" />
     <PackageReference Include="Microsoft.Data.Sqlite" Version="11.0.0" />

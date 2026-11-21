@@ -57,6 +57,8 @@ internal sealed class FakeProvider : HttpMessageHandler
 
 public class AccountTests : IDisposable
 {
+    private static readonly AssistantTools Tools = new(null, null, null, databasePath: Path.Combine(Path.GetTempPath(), "aianalyze-unused.db"));
+
     private readonly string _dir = Path.Combine(Path.GetTempPath(), $"aianalyze-account-{Guid.NewGuid():N}");
     private readonly FakeProvider _provider = new();
     private readonly CloudOptions _options = new() { Issuer = FakeProvider.Issuer, ClientId = "desktop-app", ApiBaseUrl = "https://api.example.test" };
@@ -142,11 +144,11 @@ public class AccountTests : IDisposable
         {
             Environment.SetEnvironmentVariable("ANTHROPIC_API_KEY", null);
             var signedOut = NewService(out _);
-            var cloud = new CloudChat(new HttpClient(_provider), _options, signedOut);
+            var cloud = new CloudChat(new HttpClient(_provider), _options, signedOut, Tools);
 
-            Assert.Equal(ChatMode.Off, new ChatRouter(new ClaudeChat(new ClaudeOptions()), cloud, new ClaudeOptions()).Mode);
+            Assert.Equal(ChatMode.Off, new ChatRouter(new ClaudeChat(new ClaudeOptions(), Tools), cloud, new ClaudeOptions()).Mode);
             var withKey = new ClaudeOptions { ApiKey = "test-key" };
-            Assert.Equal(ChatMode.ApiKey, new ChatRouter(new ClaudeChat(withKey), cloud, withKey).Mode);
+            Assert.Equal(ChatMode.ApiKey, new ChatRouter(new ClaudeChat(withKey, Tools), cloud, withKey).Mode);
         }
         finally
         {
@@ -162,7 +164,7 @@ public class AccountTests : IDisposable
         await service.CompleteSignInAsync(query["state"], "code", CancellationToken.None);
         var withKey = new ClaudeOptions { ApiKey = "test-key" };
 
-        var router = new ChatRouter(new ClaudeChat(withKey), new CloudChat(new HttpClient(_provider), _options, service), withKey);
+        var router = new ChatRouter(new ClaudeChat(withKey, Tools), new CloudChat(new HttpClient(_provider), _options, service, Tools), withKey);
 
         Assert.Equal(ChatMode.Account, router.Mode);
     }

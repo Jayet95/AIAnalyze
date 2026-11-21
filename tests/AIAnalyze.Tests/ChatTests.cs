@@ -10,6 +10,8 @@ namespace AIAnalyze.Tests;
 
 public class ChatTests
 {
+    private static readonly AssistantTools Tools = new(null, null, null, databasePath: Path.Combine(Path.GetTempPath(), "aianalyze-unused.db"));
+
     private static HttpRequest Request(string? origin, int port = 5280)
     {
         var context = new DefaultHttpContext();
@@ -51,7 +53,7 @@ public class ChatTests
         {
             Environment.SetEnvironmentVariable("ANTHROPIC_API_KEY", null);
             Assert.False(new ClaudeOptions().IsConfigured);
-            Assert.False(new ClaudeChat(new ClaudeOptions()).AutoFeedbackEnabled);
+            Assert.False(new ClaudeChat(new ClaudeOptions(), Tools).AutoFeedbackEnabled);
             Assert.True(new ClaudeOptions { ApiKey = "test-key" }.IsConfigured);
         }
         finally

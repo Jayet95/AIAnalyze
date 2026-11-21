@@ -1,0 +1,74 @@
+[
+  {
+    "name": "get_health_checks",
+    "description": "Returns the latest whole-PC health report: every check (crashes and blue screens, hardware errors, graphics driver resets, crashing programs, failing services, failed updates, disk space, drive health, memory, RAM setup, busy programs, uptime, battery) with its status, summary and all of its evidence lines. Use it when the briefing's shortened evidence is not enough.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "only_problems": { "type": "boolean", "description": "Return only checks that warn or fail. Default false." }
+      }
+    }
+  },
+  {
+    "name": "search_event_log",
+    "description": "Searches the Windows Event Log on this PC for health-related events: blue screens and unexpected shutdowns (crashes), WHEA hardware errors, graphics driver resets, program crashes and hangs, failing services and failed Windows updates. Returns the matching events newest first, with time, source, event id and a shortened message, plus a count per day. Use it to see when a problem started, how often it happens, or what happened around a given time.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "category": {
+          "type": "string",
+          "enum": ["all", "crashes", "hardware_errors", "display_driver", "app_crashes", "services", "updates"],
+          "description": "Kind of event. crashes = blue screens and unexpected shutdowns."
+        },
+        "days": { "type": "integer", "minimum": 1, "maximum": 30, "description": "How many days back to search. Default 7." },
+        "contains": { "type": "string", "description": "Only events whose message contains this text, for example a program name. Case-insensitive." },
+        "limit": { "type": "integer", "minimum": 1, "maximum": 50, "description": "Maximum events to list. Default 20." }
+      },
+      "required": ["category"]
+    }
+  },
+  {
+    "name": "get_sensor_history",
+    "description": "Returns CPU temperature, load and power, and GPU temperature, load and clock, over a past period, as minimum, average and maximum per time bucket. The app keeps these readings for 2 days. Use it for questions about heat, throttling, load or noise over time, or what the PC was doing at a given time.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "hours": { "type": "number", "minimum": 0.1, "maximum": 48, "description": "How far back to look. Default 1." },
+        "end_hours_ago": { "type": "number", "minimum": 0, "maximum": 48, "description": "End the period this many hours ago instead of now. Default 0." },
+        "bucket_minutes": { "type": "integer", "minimum": 1, "maximum": 240, "description": "Size of each bucket. Default: chosen to give about 24 buckets." }
+      }
+    }
+  },
+  {
+    "name": "list_sessions",
+    "description": "Lists saved game and app sessions (with FPS captured), newest first: id, application, start time, duration, median FPS and findings. Use it to find sessions to compare or to see how a game's performance changed over time.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "application": { "type": "string", "description": "Only sessions of this program (executable name, case-insensitive, partial match)." },
+        "limit": { "type": "integer", "minimum": 1, "maximum": 50, "description": "Default 15." }
+      }
+    }
+  },
+  {
+    "name": "get_session_details",
+    "description": "Returns the full analysis of one session: FPS percentiles, the baseline comparison, every reading's minimum, median and maximum, the slowest seconds with readings, and the findings. Call it once per session to compare sessions.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "session_id": { "type": "integer", "description": "Session id from the briefing or list_sessions." }
+      },
+      "required": ["session_id"]
+    }
+  },
+  {
+    "name": "get_live_status",
+    "description": "Returns what is happening right now: the latest CPU and GPU readings, every fan and pump, memory in use, the busiest programs by CPU and memory (from the latest health check), and which programs are drawing frames.",
+    "input_schema": { "type": "object", "properties": {} }
+  },
+  {
+    "name": "get_system_info",
+    "description": "Returns full hardware and software details: computer model, CPU, every GPU with driver version, motherboard and BIOS, Windows build, each RAM stick (slot, channel, size, type, speeds, maker, part number), drives with free space, and physical disk health.",
+    "input_schema": { "type": "object", "properties": {} }
+  }
+]

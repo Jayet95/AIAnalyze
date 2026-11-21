@@ -32,14 +32,15 @@ public static class HealthCollector
             slots);
     }
 
-    /// <summary>Events from the watched providers in the last 7 days, newest first.</summary>
-    public static IReadOnlyList<HealthEvent> ReadEvents()
+    /// <summary>Events from the watched providers in the last 7 days (or the given window), newest first.</summary>
+    public static IReadOnlyList<HealthEvent> ReadEvents(TimeSpan? window = null)
     {
+        var span = window ?? EventWindow;
         var events = new List<HealthEvent>();
         foreach (var (log, providers) in HealthAnalyzer.WatchedProviders)
         {
             var providerFilter = string.Join(" or ", providers.Select(p => $"@Name='{p}'"));
-            var query = $"*[System[Provider[{providerFilter}] and TimeCreated[timediff(@SystemTime) <= {(long)EventWindow.TotalMilliseconds}]]]";
+            var query = $"*[System[Provider[{providerFilter}] and TimeCreated[timediff(@SystemTime) <= {(long)span.TotalMilliseconds}]]]";
             try
             {
                 using var reader = new EventLogReader(new EventLogQuery(log, PathType.LogName, query) { ReverseDirection = true });

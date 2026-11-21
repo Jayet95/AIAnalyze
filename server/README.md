@@ -2,7 +2,7 @@
 
 A Cloudflare Worker that gives signed-in users the assistant without their own API key, and receives opt-in diagnostics.
 
-- `POST /v1/chat`: checks the user's sign-in token, counts the question against a daily free quota, and relays it to Claude with **your** Anthropic API key. The Worker owns the assistant's instructions, so a modified app can't use your key for anything else.
+- `POST /v1/chat`: checks the user's sign-in token, counts the question against a daily free quota, and relays it to Claude with **your** Anthropic API key. The Worker owns the assistant's instructions and tool definitions (it imports `AIAnalyze/Chat/Assistant/instructions.txt` and `tools.json`, the same files the app embeds, so deploy from a full checkout of the repository). When the model asks for a tool, the Worker returns the tool call; the app runs it on the PC (read-only queries over its own data) and sends only the result in the next request. A question counts once; its tool rounds count against a separate, larger daily step quota (`steps` column).
 - `GET /v1/me`: questions used today and the daily limit.
 - `POST /v1/telemetry`: opt-in snapshots and Helpful / Not helpful votes (anonymous, or tied to the account when signed in).
 - A daily job deletes telemetry and feedback after 90 days and usage counters after 60 days.
