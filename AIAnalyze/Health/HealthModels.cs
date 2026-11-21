@@ -39,7 +39,9 @@ public sealed record HealthSnapshot(
     MemoryUse? Memory,
     IReadOnlyList<ProcessUse> TopByCpu,
     IReadOnlyList<ProcessUse> TopByMemory,
-    BatteryHealth? Battery);
+    BatteryHealth? Battery,
+    IReadOnlyList<MemoryModule>? MemoryModules = null,
+    int MemorySlots = 0);
 
 /// <summary>
 /// The result of one check. Severity null means the check passed. Evidence holds the specific events,
@@ -60,7 +62,9 @@ public sealed record HealthReport(
     MemoryUse? Memory,
     IReadOnlyList<DriveSpace> Drives,
     IReadOnlyList<ProcessUse> TopByCpu,
-    IReadOnlyList<ProcessUse> TopByMemory)
+    IReadOnlyList<ProcessUse> TopByMemory,
+    IReadOnlyList<MemoryModule>? MemoryModules = null,
+    int MemorySlots = 0)
 {
     /// <summary>The most severe result, or null when every check passed.</summary>
     public FindingSeverity? Worst => Checks.Where(c => c.Severity is not null).Select(c => c.Severity).Max();

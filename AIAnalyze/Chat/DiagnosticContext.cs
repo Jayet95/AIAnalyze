@@ -85,6 +85,12 @@ public static class DiagnosticContext
                 sb.AppendLine($"  - {line}");
             }
         }
+        if (report.MemoryModules is { Count: > 0 } modules)
+        {
+            sb.AppendLine($"- RAM sticks ({modules.Count} of {(report.MemorySlots > 0 ? report.MemorySlots.ToString() : "?")} slots): " +
+                string.Join("; ", modules.Select(m =>
+                    $"{m.Slot} (channel {m.Channel ?? "?"}) {m.CapacityGb:0.#} GB {m.Type} at {m.ConfiguredSpeedMts?.ToString() ?? "?"} MT/s, reports {m.RatedSpeedMts?.ToString() ?? "?"}, {m.Manufacturer} {m.PartNumber}".TrimEnd())));
+        }
         sb.AppendLine($"- Uptime: {report.Uptime.TotalDays:0.#} days");
         if (report.TopByCpu.Count > 0)
         {

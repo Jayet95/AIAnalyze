@@ -128,6 +128,17 @@ Data: `GET /api/cooling` every 5 s while visible (503 `{ "error": ... }` until t
 - **Unknown:** one calm line with `coolingTypeReason` and no empty tables. On laptops this is the normal state.
 - Empty `gpus` with a known GPU elsewhere means the card doesn't report its fans; say "This graphics card doesn't report its fans."
 
+### 4.3b Memory (card on System, and the "Memory setup" check on Health)
+
+Data: `GET /api/memory` (updated with each health check; 503 until the first one). Sample in `ui-fixtures.json`.
+
+- **Slot map:** draw the board's slots as a row of `totalSlots` vertical bars. Filled bars for installed sticks, labeled with `slot` (for example `DIMM_A2`), size (`capacityGb` + `type`, "16 GB DDR5"), and speed. Empty bars are outlined and say "Empty". Windows lists only installed sticks, so draw empty slots as unnamed placeholders.
+- **Channels:** colour or group sticks by `channel` (A, B, or a controller-qualified value such as `0A`/`1A`); null means unknown. Two sticks with the same channel on a 4-slot board is the single-channel problem the check warns about.
+- **Speed:** show `configuredSpeedMts` as the main number ("4800 MT/s"). When `ratedSpeedMts` is higher, add "reports 6000" in muted text.
+- **Model:** `manufacturer` + `partNumber` in small text. No serial numbers are sent.
+- **Check:** `check` uses the same shape as the Health checks (severity null, Info, Warning). Show it under the slot map with **Ask about this** when it has a severity.
+- **Laptops:** soldered memory often reports names like `Controller0-ChannelA/B-DIMM0` and `totalSlots` equal to the stick count; that's normal.
+
 ### 4.4 Sessions
 
 List data: `GET /api/sessions?limit=200` every 30 s. Each row: application, start time, duration (`durationSeconds`), median FPS, worst-severity badge (`worst`, may be null).

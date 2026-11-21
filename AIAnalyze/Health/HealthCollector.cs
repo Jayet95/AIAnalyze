@@ -17,6 +17,7 @@ public static class HealthCollector
     public static async Task<HealthSnapshot> CollectAsync(TimeSpan cpuWindow, CancellationToken cancellationToken)
     {
         var (byCpu, byMemory) = await SampleProcessesAsync(cpuWindow, cancellationToken);
+        var (modules, slots) = MemoryModules.Read();
         return new HealthSnapshot(
             DateTimeOffset.UtcNow,
             TimeSpan.FromMilliseconds(Environment.TickCount64),
@@ -26,7 +27,9 @@ public static class HealthCollector
             ReadMemory(),
             byCpu,
             byMemory,
-            ReadBattery());
+            ReadBattery(),
+            modules,
+            slots);
     }
 
     /// <summary>Events from the watched providers in the last 7 days, newest first.</summary>

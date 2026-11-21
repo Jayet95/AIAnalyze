@@ -54,6 +54,24 @@ public static class ApiEndpoints
             return Results.Accepted();
         });
 
+        api.MapGet("/memory", (Health.HealthState state) =>
+        {
+            if (state.Latest is not { } report)
+            {
+                return Results.Json(new { error = "The first health check hasn't run yet." }, statusCode: StatusCodes.Status503ServiceUnavailable);
+            }
+            var modules = report.MemoryModules ?? [];
+            return Results.Json(new
+            {
+                atUtc = report.AtUtc,
+                totalGb = Math.Round(modules.Sum(m => m.CapacityGb), 1),
+                totalSlots = report.MemorySlots,
+                usedSlots = modules.Count,
+                modules,
+                check = report.Checks.FirstOrDefault(c => c.Id == "memory-config"),
+            }, Health.HealthJson.Options);
+        });
+
         api.MapGet("/cooling", (Sensors.LatestSensors latest) =>
             latest.Current is { } now
                 ? Results.Ok(Sensors.CoolingSummary.Build(now.AtUtc, now.Samples))

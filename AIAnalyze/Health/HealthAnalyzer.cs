@@ -42,6 +42,7 @@ public static partial class HealthAnalyzer
             DiskSpace(s),
             DiskHealth(s),
             Memory(s),
+            MemoryModules.Check(s.MemoryModules ?? [], s.MemorySlots),
             CpuHogs(s),
             Uptime(s),
         };
@@ -50,7 +51,8 @@ public static partial class HealthAnalyzer
             checks.Add(Battery(s.Battery));
         }
 
-        return new HealthReport(s.AtUtc, s.Uptime, checks, s.Memory, s.Drives, s.TopByCpu, s.TopByMemory);
+        return new HealthReport(s.AtUtc, s.Uptime, checks, s.Memory, s.Drives, s.TopByCpu, s.TopByMemory,
+            s.MemoryModules ?? [], s.MemorySlots);
     }
 
     private static HealthCheckResult Crashes(HealthSnapshot s)
