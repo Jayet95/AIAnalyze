@@ -94,6 +94,12 @@ public sealed class SampleStore : IDisposable
                 message    TEXT    NOT NULL,
                 session_id INTEGER            -- set when the alert comes from a session finding
             );
+            CREATE TABLE IF NOT EXISTS daily_stats (
+                day   TEXT NOT NULL,  -- local date, yyyy-MM-dd
+                key   TEXT NOT NULL,  -- for example gpu_temp_load_p90 or drive_free_gb:C:
+                value REAL NOT NULL,
+                PRIMARY KEY (day, key)
+            );
             """;
         create.ExecuteNonQuery();
     }
@@ -113,6 +119,32 @@ public sealed class SampleStore : IDisposable
         cmd.Parameters.AddWithValue("$key", key);
         cmd.Parameters.AddWithValue("$value", value);
         cmd.ExecuteNonQuery();
+    }
+
+    /// <summary>Daily aggregates kept for trends (180 days): one value per day and key, replaced when recomputed.</summary>
+    public void SetDailyStat(string day, string key, double value)
+    {
+        using var cmd = _connection.CreateCommand();
+        cmd.CommandText = "INSERT INTO daily_stats (day, key, value) VALUES ($day, $key, $value) ON CONFLICT(day, key) DO UPDATE SET value = excluded.value;";
+        cmd.Parameters.AddWithValue("$day", day);
+        cmd.Parameters.AddWithValue("$key", key);
+        cmd.Parameters.AddWithValue("$value", value);
+        cmd.ExecuteNonQuery();
+    }
+
+    /// <summary>Daily aggregates from the given local day on, ordered by day.</summary>
+    public IReadOnlyList<(string Day, string Key, double Value)> GetDailyStats(string fromDay)
+    {
+        using var cmd = _connection.CreateCommand();
+        cmd.CommandText = "SELECT day, key, value FROM daily_stats WHERE day >= $from ORDER BY day, key;";
+        cmd.Parameters.AddWithValue("$from", fromDay);
+        var rows = new List<(string, string, double)>();
+        using var reader = cmd.ExecuteReader();
+        while (reader.Read())
+        {
+            rows.Add((reader.GetString(0), reader.GetString(1), reader.GetDouble(2)));
+        }
+        return rows;
     }
 
     /// <summary>Queues something to upload later (only sent when the user agreed to share).</summary>
@@ -638,8 +670,10 @@ public sealed class SampleStore : IDisposable
             DELETE FROM alerts WHERE ts_utc < $cutoff;
             DELETE FROM fps_seconds WHERE session_id IN (SELECT id FROM sessions WHERE start_utc < $cutoff);
             DELETE FROM outbox WHERE created_utc < $cutoff;
+            DELETE FROM daily_stats WHERE day < $statsCutoff;
             """;
         cmd.Parameters.AddWithValue("$cutoff", cutoff);
+        cmd.Parameters.AddWithValue("$statsCutoff", now.ToLocalTime().AddDays(-180).ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture));
         return cmd.ExecuteNonQuery();
     }
 

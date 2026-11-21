@@ -150,7 +150,9 @@ builder.Services.AddSingleton(claudeOptions);
 builder.Services.AddSingleton(sp => new AIAnalyze.Chat.AssistantTools(
     sp.GetRequiredService<CaptureStatus>(),
     sp.GetRequiredService<AIAnalyze.Health.HealthState>(),
-    sp.GetRequiredService<LatestSensors>()));
+    sp.GetRequiredService<LatestSensors>(),
+    live: sp.GetRequiredService<AIAnalyze.Monitoring.LiveIssueEngine>(),
+    trends: sp.GetRequiredService<AIAnalyze.Monitoring.TrendState>()));
 builder.Services.AddSingleton<AIAnalyze.Chat.ClaudeChat>();
 
 // Accounts and the AIAnalyze server (sign-in with any OpenID Connect provider, such as Clerk).
@@ -175,12 +177,18 @@ builder.Services.AddHostedService<Worker>();
 builder.Services.AddHostedService<FpsMonitorService>();
 builder.Services.AddSingleton<AIAnalyze.Health.HealthState>();
 builder.Services.AddHostedService<AIAnalyze.Health.HealthMonitorService>();
+// The live assistant: issues while the PC runs (every 5 s) and potential problems from trends (every 3 h).
+builder.Services.AddSingleton(new AIAnalyze.Monitoring.LiveIssueEngine());
+builder.Services.AddHostedService<AIAnalyze.Monitoring.LiveMonitorService>();
+builder.Services.AddSingleton<AIAnalyze.Monitoring.TrendState>();
+builder.Services.AddHostedService<AIAnalyze.Monitoring.TrendService>();
 
 var app = builder.Build();
 app.UseDefaultFiles();
 app.UseStaticFiles();
 app.MapApi();
 app.MapChat();
+app.MapAssistant();
 app.MapAccount();
 app.MapPrivacy();
 app.Run();

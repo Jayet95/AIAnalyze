@@ -18,7 +18,8 @@
       </div>
     </div>
     <nav class="tabs" role="tablist">
-      <button class="tab active" data-tab="health" role="tab">Health</button>
+      <button class="tab active" data-tab="assistant" role="tab">Assistant</button>
+      <button class="tab" data-tab="health" role="tab">Health</button>
       <button class="tab" data-tab="live" role="tab">Live</button>
       <button class="tab" data-tab="sessions" role="tab">Sessions</button>
       <button class="tab" data-tab="system" role="tab">System</button>
@@ -41,7 +42,22 @@
   </header>
 
   <main>
-    <section id="tab-health" class="tab-panel active">
+    <section id="tab-assistant" class="tab-panel active">
+      <div class="assistant-layout">
+        <div class="assistant-side">
+          <div class="panel assistant-hero" id="assistant-hero">
+            <div class="empty">Looking over your PC…</div>
+          </div>
+          <div class="panel">
+            <div class="panel-head"><h2>What I'm watching</h2><span class="muted" id="assistant-count"></span></div>
+            <div id="assistant-items" class="assistant-items"></div>
+          </div>
+        </div>
+        <div class="assistant-chat" id="assistant-chat-slot"></div>
+      </div>
+    </section>
+
+    <section id="tab-health" class="tab-panel">
       <div id="consent-banner" class="panel consent hidden">
         <div class="grow">
           <div class="check-title">Help make AIAnalyze better?</div>

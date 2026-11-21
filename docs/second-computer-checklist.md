@@ -1,5 +1,31 @@
 # Second computer: checklist
 
+## Round 14 additions: the live assistant
+
+After reinstalling (steps 2 and 3), test these:
+
+- **Assistant home.** The window opens on the new **Assistant** tab. On the left: a verdict, a one-line headline, chips with CPU, GPU and RAM, and a "What I'm watching" list. On the right: the chat, part of the page. Click **Ask** on a row and check that its question goes into the chat. (The Lovable UI gets this layout later; the built-in UI has it now.)
+- **Live issues while playing.** Play a game for at least 3 sessions of 5 minutes or more, so it has a usual FPS. In the next session, force a drop for 30 seconds or more: cap the FPS in the game or the NVIDIA control panel to about half, or run a heavy program next to it. Within about 30 seconds you should get:
+  - a Windows notification titled **FPS drop in <game>.exe**, and
+  - a **● LIVE NOW** row on the Assistant tab.
+
+  Notifications don't show over an exclusive fullscreen game, or when Windows "Do not disturb while gaming" is on, so try borderless window mode if none appears. Then read the live issues:
+
+  ```powershell
+  (Invoke-WebRequest -UseBasicParsing http://127.0.0.1:5280/api/issues).Content
+  ```
+
+- **Memory pressure (optional).** Open many browser tabs until RAM use stays above 92% for a minute: **Memory almost full** should appear.
+- **Trends.** About 2 minutes after the service starts, it records today's figures and checks trends. They need a week or more of history before they can say anything, so for now just send the output:
+
+  ```powershell
+  (Invoke-WebRequest -UseBasicParsing http://127.0.0.1:5280/api/trends).Content
+  (Invoke-WebRequest -UseBasicParsing http://127.0.0.1:5280/api/assistant/overview).Content
+  ```
+
+- **With your own key (step 7):** ask "When did my PC start crashing?" or "Compare my last two sessions of <game>". The answer should show steps such as "Searching the Event Log…" above it, and quote numbers from this PC.
+- **Lightweight check.** In Task Manager, AIAnalyze.exe should stay around 1% CPU or less while idle (the live monitor runs every 5 seconds).
+
 ## Round 13 additions (test these too)
 
 - **AIAnalyze window app:** after reinstalling, **AIAnalyze** in the Start menu opens its own window (not the browser), with an icon next to the clock. Closing the window keeps the icon; right-click it for Open, Check health now, Start with Windows, Quit. Trigger an alert (for example **Check now** with a known warning) and check that a Windows notification appears while the window is closed. If it fails, send `%LocalAppData%\AIAnalyze\desktop.log`.

@@ -23,13 +23,16 @@ public static class DiagnosticContext
         long? focusSessionId,
         DateTimeOffset now,
         Health.HealthReport? health = null,
-        Sensors.CoolingReport? cooling = null)
+        Sensors.CoolingReport? cooling = null,
+        IReadOnlyList<Monitoring.LiveIssue>? live = null,
+        Monitoring.TrendState? trends = null)
     {
         var sb = new StringBuilder();
         sb.AppendLine($"Current local time: {Local(now)}.");
         sb.AppendLine();
 
         AppendSpecs(sb, store);
+        AppendLiveAndTrends(sb, live ?? [], trends);
         AppendHealth(sb, health ?? store.GetLatestHealthReport());
         AppendNow(sb, store, capture);
         AppendCooling(sb, cooling);
@@ -138,6 +141,34 @@ public static class DiagnosticContext
             sb.AppendLine("- Last 2 minutes: " + string.Join("; ", SessionTimeline.Metrics
                 .Select(m => SummarizeColumn(rows, m.Label))
                 .Where(x => x is not null)));
+        }
+        sb.AppendLine();
+    }
+
+    internal static void AppendLiveAndTrends(StringBuilder sb, IReadOnlyList<Monitoring.LiveIssue> live, Monitoring.TrendState? trends)
+    {
+        sb.AppendLine("## Live issues (noticed by the live monitor in the last hour)");
+        if (live.Count == 0)
+        {
+            sb.AppendLine("None.");
+        }
+        foreach (var i in live)
+        {
+            var state = i.Active ? $"ongoing since {Local(i.StartedUtc)}" : $"from {Local(i.StartedUtc)} to {Local(i.LastSeenUtc)}";
+            sb.AppendLine($"- [{i.Severity}] {i.Title} ({state}): {i.Detail}");
+        }
+        sb.AppendLine();
+
+        sb.AppendLine(trends?.AtUtc is { } at
+            ? $"## Potential problems from trends (checked {Local(at)})"
+            : "## Potential problems from trends");
+        if (trends is null || trends.Problems.Count == 0)
+        {
+            sb.AppendLine(trends?.AtUtc is null ? "Not analyzed yet." : "None found.");
+        }
+        foreach (var p in trends?.Problems ?? [])
+        {
+            sb.AppendLine($"- [{p.Severity}] {p.Title}: {p.Detail}");
         }
         sb.AppendLine();
     }

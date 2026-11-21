@@ -132,6 +132,36 @@ public static class HealthCollector
         return null;
     }
 
+    /// <summary>Memory in use from GlobalMemoryStatusEx: cheap enough for the live monitor to call every few seconds.</summary>
+    public static MemoryUse? ReadMemoryFast()
+    {
+        var status = new MemoryStatusEx { Length = (uint)System.Runtime.InteropServices.Marshal.SizeOf<MemoryStatusEx>() };
+        if (!GlobalMemoryStatusEx(ref status) || status.TotalPhys == 0)
+        {
+            return null;
+        }
+        const double Gb = 1024d * 1024 * 1024;
+        return new MemoryUse(status.TotalPhys / Gb, (status.TotalPhys - status.AvailPhys) / Gb);
+    }
+
+    [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Sequential)]
+    private struct MemoryStatusEx
+    {
+        public uint Length;
+        public uint MemoryLoad;
+        public ulong TotalPhys;
+        public ulong AvailPhys;
+        public ulong TotalPageFile;
+        public ulong AvailPageFile;
+        public ulong TotalVirtual;
+        public ulong AvailVirtual;
+        public ulong AvailExtendedVirtual;
+    }
+
+    [System.Runtime.InteropServices.DllImport("kernel32.dll", SetLastError = true)]
+    [return: System.Runtime.InteropServices.MarshalAs(System.Runtime.InteropServices.UnmanagedType.Bool)]
+    private static extern bool GlobalMemoryStatusEx(ref MemoryStatusEx buffer);
+
     public static BatteryHealth? ReadBattery()
     {
         try

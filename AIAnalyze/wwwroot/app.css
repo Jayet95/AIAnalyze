@@ -298,6 +298,35 @@ h3 { font-size: 18px; margin: 0; }
 .toast .actions { display: flex; justify-content: flex-end; gap: 6px; }
 @keyframes slide-in { from { transform: translateY(12px); opacity: 0; } to { transform: none; opacity: 1; } }
 
+/* ---------- assistant home */
+.assistant-layout { display: grid; grid-template-columns: minmax(0, 1fr) minmax(360px, 1.15fr); gap: 16px; align-items: start; }
+.assistant-side { display: grid; gap: 16px; }
+.assistant-chat { position: sticky; top: 84px; height: calc(100vh - 110px); min-height: 460px; }
+.assistant-hero { display: grid; gap: 12px; }
+.assistant-hero .top { display: flex; align-items: center; gap: 14px; }
+.assistant-hero .headline { font-size: 18px; font-weight: 700; line-height: 1.35; }
+.now-strip { display: flex; flex-wrap: wrap; gap: 6px; }
+.now-chip { border-radius: 999px; background: var(--surface-2); padding: 4px 10px; font-size: 12px; font-variant-numeric: tabular-nums; }
+.now-chip.playing { background: color-mix(in srgb, var(--accent) 16%, transparent); color: var(--accent); font-weight: 600; }
+.assistant-items { display: grid; gap: 2px; }
+.a-item { display: grid; grid-template-columns: 18px 1fr auto; gap: 2px 12px; padding: 10px 6px; border-radius: 8px; }
+.a-item + .a-item { border-top: 1px solid var(--border); }
+.a-item.resolved { opacity: .6; }
+.a-item .meta { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
+.a-item .meta .live { color: var(--crit); font-weight: 700; }
+.a-item .detail { grid-column: 2 / 3; color: var(--muted); font-size: 13px; }
+.a-item .ask { align-self: center; grid-row: 1 / 3; grid-column: 3; }
+.assistant-chat .drawer.docked {
+  position: static; transform: none; width: auto; height: 100%; box-shadow: none;
+  border: 1px solid var(--border); border-radius: 14px; z-index: auto;
+}
+.drawer.docked #chat-close { display: none; }
+.assistant-greeting { align-self: flex-start; max-width: 88%; padding: 10px 12px; border-radius: 12px; background: var(--surface-2); line-height: 1.55; }
+@media (max-width: 900px) {
+  .assistant-layout { grid-template-columns: 1fr; }
+  .assistant-chat { position: static; height: 70vh; }
+}
+
 /* ---------- chat drawer */
 .drawer {
   position: fixed; top: 0; right: 0; bottom: 0; width: min(440px, 100vw); z-index: 25;

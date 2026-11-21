@@ -207,6 +207,7 @@ Data: `GET /api/specs` (404 before the first start). Cards: computer (`computerM
 | Endpoint | When |
 |---|---|
 | `/api/status` | every 5 s |
+| `/api/assistant/overview` | every 5 s, Assistant tab visible only |
 | `/api/live?minutes=5` | every 2 s, Live tab visible only |
 | `/api/health` | every 30 s on Health; every 2 s after **Check now** until the report changes |
 | `/api/alerts?after=` | every 10 s |
@@ -235,6 +236,45 @@ Pause polling when `document.hidden` is true.
 > - Settings has a toggle "Share anonymous diagnostics to help improve AIAnalyze" with that explanation, a note "This build has no server set up yet, so nothing is sent" when `serverConfigured` is false, and "Show exactly what is shared" revealing `preview` as formatted JSON.
 >
 > **Feedback votes**: "Helpful? 👍 👎" on each Health problem or suggestion (`target: "health"`, `kind`: the check id), each session finding (`target: "finding"`, `kind`: the finding kind), and each finished assistant answer (`target: "answer"`, `kind: "chat"`). Send `POST /api/feedback` with `{ "target": "...", "kind": "...", "helpful": true | false }`; afterwards replace the buttons with "Thanks for the feedback". Votes are kept on the PC and uploaded only when sharing is on, so no extra wording is needed.
+
+## 6b. Update: the assistant becomes the home screen (send this to Lovable as a follow-up)
+
+> Make the assistant the center of AIAnalyze. Users open it to hear what is wrong with their PC and what to do; the other screens become details. Same rules as before: relative URLs, mock data from fixtures when the service is unreachable.
+>
+> **New first tab "Assistant", shown on open.** Desktop layout: two columns. Left (about 45%): a status card and a "What I'm watching" list. Right (about 55%): the chat, docked in the page and as tall as the window (sticky), using the same chat component as the drawer. Below 900 px wide, stack them: status card, list, then chat. On the other tabs the chat stays the slide-in drawer opened from **Ask AI**.
+>
+> **Data**: `GET /api/assistant/overview` every 5 s while the tab is visible:
+>
+> ```json
+> {
+>   "atUtc": "2026-11-21T19:04:05Z",
+>   "verdict": "attention",
+>   "headline": "2 things need attention: FPS drop in cyberpunk2077.exe; C: filling up.",
+>   "playing": { "application": "cyberpunk2077.exe", "fps": 58.4 },
+>   "now": { "cpuTemp": 71, "cpuLoad": 64, "gpuTemp": 79, "gpuLoad": 98, "memoryPercent": 71.5 },
+>   "items": [
+>     { "source": "live", "id": "fps-drop", "severity": "Warning", "title": "FPS drop in cyberpunk2077.exe",
+>       "detail": "cyberpunk2077.exe is running at 58 FPS, well below its usual 96 FPS. The GPU is fully loaded, so this part of the game is simply heavier.",
+>       "active": true, "sinceUtc": "2026-11-21T19:03:20Z", "question": "Why did my FPS drop in cyberpunk2077.exe just now?" },
+>     { "source": "trend", "id": "drive-filling-c", "severity": "Warning", "title": "C: filling up",
+>       "detail": "C: lost about 2.4 GB a day over the last two weeks and has 61 GB left: full in about 25 days at this pace.",
+>       "active": true, "sinceUtc": null, "question": "My C: drive is filling up fast. What is taking the space?" },
+>     { "source": "health", "id": "restart", "severity": "Info", "title": "Restart",
+>       "detail": "The PC has been running for 16 days without a restart.", "active": true, "sinceUtc": null,
+>       "question": "Tell me more about \"Restart\": what does it mean and what should I do?" }
+>   ],
+>   "suggestedQuestions": ["Why did my FPS drop in cyberpunk2077.exe just now?", "My C: drive is filling up fast. What is taking the space?", "Is anything wrong with my PC right now?", "Why does my PC feel slow?"],
+>   "healthCheckedUtc": "2026-11-21T18:58:00Z",
+>   "trendsCheckedUtc": "2026-11-21T18:00:00Z"
+> }
+> ```
+>
+> - **Status card**: a big verdict icon (good = green check, attention = amber, problem = red), `headline` as the title, "Health checked 6 min ago · watching live" under it, then small chips: "Playing cyberpunk2077.exe · 58 FPS" (accent color, only when `playing`), "CPU 71 °C · 64%", "GPU 79 °C · 98%", "RAM 72%" (skip null values).
+> - **What I'm watching**: one row per item, in the given order. Severity dot, a small uppercase label (`source`: live → a red pulsing "● LIVE NOW" while `active`, health → "Health check", trend → "Trend"; add "· ended" when `active` is false and fade the row; add "· since 2 min ago" from `sinceUtc`), the title, the detail in muted text, and an **Ask** button that sends `question` to the chat. Empty list: "Nothing to report. I'll tell you as soon as something comes up, also while you play."
+> - **Chat greeting**: when the conversation is empty, the first assistant bubble is "Good evening. " (by local time) + `headline` + "Ask me anything about this PC, or pick a question below.", and the suggestion chips are `suggestedQuestions`. This greeting is local: it costs nothing and is not sent to the model.
+> - **Tool steps** in answers (already in 4.6): show each `tool` event's label as a small step line above the answer.
+> - Optional detail views: `GET /api/issues` (live issues only), `GET /api/trends` → `{ atUtc, problems: [{ id, severity, title, detail, question }], history: [{ day: "2026-11-20", values: { "gpu_temp_load": 78.5, "cpu_temp_idle": 41, "drive_free_gb:C:": 61.2 } }] }` for a "Trends" card with small line charts of temperatures under load and free space per drive (45 days).
+> - Alerts now also have kinds `Live` (message "Title: detail", raised while the problem happens) and `Trend`; show them like other alerts.
 
 ## 7. Putting the build into the app
 

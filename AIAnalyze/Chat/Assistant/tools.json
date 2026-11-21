@@ -5,7 +5,10 @@
     "input_schema": {
       "type": "object",
       "properties": {
-        "only_problems": { "type": "boolean", "description": "Return only checks that warn or fail. Default false." }
+        "only_problems": {
+          "type": "boolean",
+          "description": "Return only checks that warn or fail. Default false."
+        }
       }
     }
   },
@@ -17,14 +20,37 @@
       "properties": {
         "category": {
           "type": "string",
-          "enum": ["all", "crashes", "hardware_errors", "display_driver", "app_crashes", "services", "updates"],
+          "enum": [
+            "all",
+            "crashes",
+            "hardware_errors",
+            "display_driver",
+            "app_crashes",
+            "services",
+            "updates"
+          ],
           "description": "Kind of event. crashes = blue screens and unexpected shutdowns."
         },
-        "days": { "type": "integer", "minimum": 1, "maximum": 30, "description": "How many days back to search. Default 7." },
-        "contains": { "type": "string", "description": "Only events whose message contains this text, for example a program name. Case-insensitive." },
-        "limit": { "type": "integer", "minimum": 1, "maximum": 50, "description": "Maximum events to list. Default 20." }
+        "days": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 30,
+          "description": "How many days back to search. Default 7."
+        },
+        "contains": {
+          "type": "string",
+          "description": "Only events whose message contains this text, for example a program name. Case-insensitive."
+        },
+        "limit": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 50,
+          "description": "Maximum events to list. Default 20."
+        }
       },
-      "required": ["category"]
+      "required": [
+        "category"
+      ]
     }
   },
   {
@@ -33,9 +59,24 @@
     "input_schema": {
       "type": "object",
       "properties": {
-        "hours": { "type": "number", "minimum": 0.1, "maximum": 48, "description": "How far back to look. Default 1." },
-        "end_hours_ago": { "type": "number", "minimum": 0, "maximum": 48, "description": "End the period this many hours ago instead of now. Default 0." },
-        "bucket_minutes": { "type": "integer", "minimum": 1, "maximum": 240, "description": "Size of each bucket. Default: chosen to give about 24 buckets." }
+        "hours": {
+          "type": "number",
+          "minimum": 0.1,
+          "maximum": 48,
+          "description": "How far back to look. Default 1."
+        },
+        "end_hours_ago": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 48,
+          "description": "End the period this many hours ago instead of now. Default 0."
+        },
+        "bucket_minutes": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 240,
+          "description": "Size of each bucket. Default: chosen to give about 24 buckets."
+        }
       }
     }
   },
@@ -45,8 +86,16 @@
     "input_schema": {
       "type": "object",
       "properties": {
-        "application": { "type": "string", "description": "Only sessions of this program (executable name, case-insensitive, partial match)." },
-        "limit": { "type": "integer", "minimum": 1, "maximum": 50, "description": "Default 15." }
+        "application": {
+          "type": "string",
+          "description": "Only sessions of this program (executable name, case-insensitive, partial match)."
+        },
+        "limit": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 50,
+          "description": "Default 15."
+        }
       }
     }
   },
@@ -56,19 +105,38 @@
     "input_schema": {
       "type": "object",
       "properties": {
-        "session_id": { "type": "integer", "description": "Session id from the briefing or list_sessions." }
+        "session_id": {
+          "type": "integer",
+          "description": "Session id from the briefing or list_sessions."
+        }
       },
-      "required": ["session_id"]
+      "required": [
+        "session_id"
+      ]
     }
   },
   {
     "name": "get_live_status",
     "description": "Returns what is happening right now: the latest CPU and GPU readings, every fan and pump, memory in use, the busiest programs by CPU and memory (from the latest health check), and which programs are drawing frames.",
-    "input_schema": { "type": "object", "properties": {} }
+    "input_schema": {
+      "type": "object",
+      "properties": {}
+    }
   },
   {
     "name": "get_system_info",
     "description": "Returns full hardware and software details: computer model, CPU, every GPU with driver version, motherboard and BIOS, Windows build, each RAM stick (slot, channel, size, type, speeds, maker, part number), drives with free space, and physical disk health.",
-    "input_schema": { "type": "object", "properties": {} }
+    "input_schema": {
+      "type": "object",
+      "properties": {}
+    }
+  },
+  {
+    "name": "get_issues_and_trends",
+    "description": "Returns the live issues the app noticed in the last hour (FPS drops, GPU throttling, heat, memory almost full, programs keeping the CPU or GPU busy), the potential problems found from trends, and the daily history behind the trends for up to 45 days: CPU and GPU temperature under load and at idle, and free space per drive. Use it for questions about how things changed over days or weeks, or what happened while the user was playing.",
+    "input_schema": {
+      "type": "object",
+      "properties": {}
+    }
   }
 ]

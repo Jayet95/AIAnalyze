@@ -16,7 +16,7 @@ internal sealed class TrayApp : ApplicationContext
     private readonly NotifyIcon _tray;
     private readonly ToolStripMenuItem _startupItem;
     private readonly HttpClient _http = new() { BaseAddress = ServiceUrl, Timeout = TimeSpan.FromSeconds(8) };
-    private readonly System.Windows.Forms.Timer _alertTimer = new() { Interval = 30_000 };
+    private readonly System.Windows.Forms.Timer _alertTimer = new() { Interval = 10_000 }; // live issues should reach the user within seconds
     private readonly SynchronizationContext _ui;
     private MainWindow? _window;
     private long? _lastAlertId;
@@ -107,9 +107,13 @@ internal sealed class TrayApp : ApplicationContext
             }
 
             var newest = alerts.OrderByDescending(a => a.Id).First();
-            var title = alerts.Count == 1 ? AlertTitle(newest) : $"AIAnalyze: {alerts.Count} new alerts";
+            var (title, body) = Split(newest);
+            if (alerts.Count > 1)
+            {
+                title = $"{title} (+{alerts.Count - 1} more)";
+            }
             var icon = newest.Severity is "Critical" ? ToolTipIcon.Error : newest.Severity is "Warning" ? ToolTipIcon.Warning : ToolTipIcon.Info;
-            _tray.ShowBalloonTip(10_000, title, Shorten(newest.Message, 200), icon);
+            _tray.ShowBalloonTip(10_000, Shorten(title, 60), Shorten(body, 200), icon);
         }
         catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or JsonException)
         {
@@ -151,6 +155,15 @@ internal sealed class TrayApp : ApplicationContext
         _window?.Dispose();
         _http.Dispose();
         ExitThread();
+    }
+
+    /// <summary>Live issues and trends arrive as "Title: detail"; their title makes the notification's title.</summary>
+    private static (string Title, string Body) Split(Alert a)
+    {
+        var cut = a.Message.IndexOf(": ", StringComparison.Ordinal);
+        return a.Kind is "Live" or "Trend" && cut > 0 && cut <= 60
+            ? (a.Message[..cut], a.Message[(cut + 2)..])
+            : (AlertTitle(a), a.Message);
     }
 
     private static string AlertTitle(Alert a) => a.Kind switch

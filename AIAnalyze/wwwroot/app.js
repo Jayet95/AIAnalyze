@@ -482,10 +482,27 @@ async function refreshSpecs() {
 
 // ---------------------------------------------------------------- tabs and timers
 
-let activeTab = "health";
+let activeTab = "assistant";
+
+// On the Assistant tab the chat is part of the page; elsewhere it is the slide-in drawer.
+function dockChat(docked) {
+  const drawer = $("#chat");
+  if (docked) {
+    $("#assistant-chat-slot").append(drawer);
+    drawer.classList.add("docked", "open");
+    drawer.setAttribute("aria-hidden", "false");
+    ensureChatStatus().then(renderChat);
+  } else if (drawer.classList.contains("docked")) {
+    document.body.append(drawer);
+    drawer.classList.remove("docked", "open");
+    drawer.setAttribute("aria-hidden", "true");
+  }
+}
 
 function showTab(name) {
   activeTab = name;
+  dockChat(name === "assistant");
+  if (name === "assistant") refreshAssistant();
   document.querySelectorAll(".tab").forEach((t) => t.classList.toggle("active", t.dataset.tab === name));
   document.querySelectorAll(".tab-panel").forEach((p) => p.classList.toggle("active", p.id === `tab-${name}`));
   if (name === "health") refreshHealth();
@@ -495,6 +512,61 @@ function showTab(name) {
 }
 
 document.querySelectorAll(".tab").forEach((t) => t.addEventListener("click", () => showTab(t.dataset.tab)));
+
+// ---------------------------------------------------------------- assistant home
+
+const assistantState = { overview: null };
+
+function greeting() {
+  const h = new Date().getHours();
+  return h < 5 ? "Hi." : h < 12 ? "Good morning." : h < 18 ? "Good afternoon." : "Good evening.";
+}
+
+const SOURCE_LABEL = { live: "Live", health: "Health check", trend: "Trend" };
+
+async function refreshAssistant() {
+  let o;
+  try { o = await getJson("/api/assistant/overview"); } catch { return; }
+  const firstLoad = !assistantState.overview;
+  assistantState.overview = o;
+
+  const sev = o.verdict === "problem" ? "Critical" : o.verdict === "attention" ? "Warning" : "ok";
+  const icon = o.verdict === "good"
+    ? '<svg viewBox="0 0 24 24" width="26" height="26"><path d="M5 12.5l4.5 4.5L19 7.5" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>'
+    : '<svg viewBox="0 0 24 24" width="26" height="26"><path d="M12 4l9 16H3L12 4zm0 6v4m0 3v.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+  const badge = el("div", { class: `health-badge ${sev}` });
+  badge.innerHTML = icon;
+
+  const chips = [];
+  if (o.playing) chips.push(el("span", { class: "now-chip playing" }, `Playing ${o.playing.application} · ${fmt.num(o.playing.fps)} FPS`));
+  if (o.now) {
+    if (o.now.cpuTemp != null) chips.push(el("span", { class: "now-chip" }, `CPU ${fmt.num(o.now.cpuTemp)} °C · ${fmt.num(o.now.cpuLoad)}%`));
+    if (o.now.gpuTemp != null) chips.push(el("span", { class: "now-chip" }, `GPU ${fmt.num(o.now.gpuTemp)} °C · ${fmt.num(o.now.gpuLoad)}%`));
+    if (o.now.memoryPercent != null) chips.push(el("span", { class: "now-chip" }, `RAM ${fmt.num(o.now.memoryPercent)}%`));
+  }
+  $("#assistant-hero").replaceChildren(
+    el("div", { class: "top" }, badge, el("div", { class: "grow" },
+      el("div", { class: "headline" }, o.headline),
+      el("div", { class: "muted small" }, o.healthCheckedUtc ? `Health checked ${fmt.ago(o.healthCheckedUtc)} · watching live` : "Watching live"))),
+    chips.length ? el("div", { class: "now-strip" }, chips) : null);
+
+  const open = o.items.filter((i) => i.active && i.severity !== "Info").length;
+  $("#assistant-count").textContent = open ? `${open} need attention` : "all clear";
+  $("#assistant-items").replaceChildren(...(o.items.length ? o.items.map((i) =>
+    el("div", { class: `a-item${i.active ? "" : " resolved"}` },
+      el("span", { class: `dot ${i.severity}` }),
+      el("div", {},
+        el("div", { class: "meta" },
+          i.source === "live" && i.active ? el("span", { class: "live" }, "● Live now") : (SOURCE_LABEL[i.source] ?? i.source),
+          i.active ? "" : " · ended",
+          i.sinceUtc ? ` · since ${fmt.ago(i.sinceUtc)}` : ""),
+        el("div", { class: "check-title" }, i.title)),
+      el("button", { class: "chip ask", type: "button", onclick: () => ask(i.question) }, "Ask"),
+      el("div", { class: "detail" }, i.detail)))
+    : [el("div", { class: "empty" }, "Nothing to report. I'll tell you as soon as something comes up, also while you play.")]));
+
+  if (firstLoad && !chat.messages.length) renderChat();
+}
 
 // ---------------------------------------------------------------- chat
 
@@ -567,8 +639,12 @@ function renderChat() {
   $("#chat-send").disabled = chat.busy;
 
   if (!chat.messages.length) {
-    box.replaceChildren(el("div", { class: "chat-empty" },
-      "Ask about temperatures, FPS, a session or an alert. Answers use what this PC has measured."));
+    box.replaceChildren(assistantState.overview
+      ? el("div", { class: "assistant-greeting", dir: "auto" },
+          el("b", {}, greeting() + " "), assistantState.overview.headline,
+          el("div", { class: "muted small", style: "margin-top:6px" }, "Ask me anything about this PC, or pick a question below."))
+      : el("div", { class: "chat-empty" },
+          "Ask about temperatures, FPS, a session or an alert. Answers use what this PC has measured."));
   } else {
     box.replaceChildren(...chat.messages.flatMap((m, i) => {
       const bubble = el("div", { class: `bubble ${m.role}${m.error ? " error" : ""}`, dir: "auto" });
@@ -589,7 +665,7 @@ function renderChat() {
     box.scrollTop = box.scrollHeight;
   }
 
-  $("#chat-suggestions").replaceChildren(...(chat.messages.length ? [] : SUGGESTIONS.map((q) =>
+  $("#chat-suggestions").replaceChildren(...(chat.messages.length ? [] : (assistantState.overview?.suggestedQuestions ?? SUGGESTIONS).map((q) =>
     el("button", { class: "chip", type: "button", onclick: () => ask(q) }, q))));
   $("#chat-context").textContent = chat.focusSessionId
     ? `Includes session ${chat.focusSessionId} in detail`
@@ -601,21 +677,25 @@ async function openChat({ question, sessionId } = {}) {
   else if (activeTab === "sessions" && selectedSession) chat.focusSessionId = selectedSession;
   $("#chat").classList.add("open");
   $("#chat").setAttribute("aria-hidden", "false");
-  if (chat.configured === null) {
-    try {
-      const status = await getJson("/api/chat/status");
-      chat.configured = status.configured;
-      chat.signInAvailable = status.signInAvailable;
-    } catch {
-      chat.configured = false;
-    }
-  }
+  await ensureChatStatus();
   renderChat();
   if (question) ask(question);
   else $("#chat-input").focus();
 }
 
+async function ensureChatStatus() {
+  if (chat.configured !== null) return;
+  try {
+    const status = await getJson("/api/chat/status");
+    chat.configured = status.configured;
+    chat.signInAvailable = status.signInAvailable;
+  } catch {
+    chat.configured = false;
+  }
+}
+
 function closeChat() {
+  if ($("#chat").classList.contains("docked")) return;
   $("#chat").classList.remove("open");
   $("#chat").setAttribute("aria-hidden", "true");
 }
@@ -678,7 +758,7 @@ async function ask(question) {
   }
 }
 
-$("#chat-btn").addEventListener("click", () => openChat());
+$("#chat-btn").addEventListener("click", () => (activeTab === "assistant" ? $("#chat-input").focus() : openChat()));
 $("#chat-close").addEventListener("click", closeChat);
 $("#chat-clear").addEventListener("click", () => {
   chat.controller?.abort();
@@ -935,8 +1015,9 @@ refreshAlerts();
 setInterval(() => { if (!document.hidden) refreshAlerts(); }, 10000);
 
 refreshStatus();
-showTab("health");
+showTab("assistant");
 setInterval(refreshStatus, 5000);
 setInterval(() => { if (activeTab === "health" && !document.hidden) refreshHealth(); }, 30000);
+setInterval(() => { if (activeTab === "assistant" && !document.hidden) refreshAssistant(); }, 5000);
 setInterval(() => { if (activeTab === "live" && !document.hidden) refreshLive(); }, 2000);
 setInterval(() => { if (activeTab === "sessions" && !document.hidden) refreshSessions(); }, 30000);

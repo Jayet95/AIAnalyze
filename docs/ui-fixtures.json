@@ -160,9 +160,262 @@
   ],
   "/api/chat/status": { "configured": true },
   "POST /api/chat (event stream)": [
+    "data: {\"tool\":{\"name\":\"search_event_log\",\"label\":\"Searching the Event Log (graphics driver, last 7 days)\"}}",
     "data: {\"text\":\"Yes, one thing needs attention now: \"}",
     "data: {\"text\":\"**your 2 TB hard drive (ST2000DM008) is failing.** Windows marks it unhealthy with a predictive failure.\\n\\n\"}",
     "data: {\"text\":\"- Back up anything on it today.\\n- Plan to replace it.\"}",
     "data: {\"done\":true}"
-  ]
+  ],
+  "/api/assistant/overview": {
+    "atUtc": "2026-11-21T19:04:05Z",
+    "verdict": "attention",
+    "headline": "2 things need attention: FPS drop in cyberpunk2077.exe; C: filling up.",
+    "playing": {
+      "application": "cyberpunk2077.exe",
+      "fps": 58.4
+    },
+    "now": {
+      "cpuTemp": 71,
+      "cpuLoad": 64,
+      "gpuTemp": 79,
+      "gpuLoad": 98,
+      "memoryPercent": 71.5
+    },
+    "items": [
+      {
+        "source": "live",
+        "id": "fps-drop",
+        "severity": "Warning",
+        "title": "FPS drop in cyberpunk2077.exe",
+        "detail": "cyberpunk2077.exe is running at 58 FPS, well below its usual 96 FPS. The GPU is fully loaded, so this part of the game is simply heavier.",
+        "active": true,
+        "sinceUtc": "2026-11-21T19:03:20Z",
+        "question": "Why did my FPS drop in cyberpunk2077.exe just now?"
+      },
+      {
+        "source": "trend",
+        "id": "drive-filling-c",
+        "severity": "Warning",
+        "title": "C: filling up",
+        "detail": "C: lost about 2.4 GB a day over the last two weeks and has 61 GB left: full in about 25 days at this pace.",
+        "active": true,
+        "sinceUtc": null,
+        "question": "My C: drive is filling up fast. What is taking the space?"
+      },
+      {
+        "source": "live",
+        "id": "memory-full",
+        "severity": "Warning",
+        "title": "Memory almost full",
+        "detail": "93% of 32 GB RAM is in use while playing cyberpunk2077.exe. Windows starts moving data to disk, which causes stutter and slowness.",
+        "active": false,
+        "sinceUtc": "2026-11-21T18:41:00Z",
+        "question": "What is using my memory, and how do I free it?"
+      },
+      {
+        "source": "health",
+        "id": "restart",
+        "severity": "Info",
+        "title": "Restart",
+        "detail": "The PC has been running for 16 days without a restart. A restart applies pending updates and clears slowdowns that build up over time.",
+        "active": true,
+        "sinceUtc": null,
+        "question": "Tell me more about \"Restart\": what does it mean and what should I do?"
+      }
+    ],
+    "suggestedQuestions": [
+      "Why did my FPS drop in cyberpunk2077.exe just now?",
+      "My C: drive is filling up fast. What is taking the space?",
+      "Is anything wrong with my PC right now?",
+      "Why does my PC feel slow?"
+    ],
+    "healthCheckedUtc": "2026-11-21T18:58:00Z",
+    "trendsCheckedUtc": "2026-11-21T18:00:00Z"
+  },
+  "/api/assistant/overview (all clear)": {
+    "atUtc": "2026-11-21T10:00:00Z",
+    "verdict": "good",
+    "headline": "Everything looks good. I'm keeping an eye on it.",
+    "playing": null,
+    "now": {
+      "cpuTemp": 44,
+      "cpuLoad": 6,
+      "gpuTemp": 38,
+      "gpuLoad": 2,
+      "memoryPercent": 31.0
+    },
+    "items": [],
+    "suggestedQuestions": [
+      "Is anything wrong with my PC right now?",
+      "Why does my PC feel slow?",
+      "How did my last game session go?",
+      "Is my PC running too hot?"
+    ],
+    "healthCheckedUtc": "2026-11-21T09:55:00Z",
+    "trendsCheckedUtc": "2026-11-21T09:00:00Z"
+  },
+  "/api/trends": {
+    "atUtc": "2026-11-21T18:00:00Z",
+    "problems": [
+      {
+        "id": "drive-filling-c",
+        "severity": "Warning",
+        "title": "C: filling up",
+        "detail": "C: lost about 2.4 GB a day over the last two weeks and has 61 GB left: full in about 25 days at this pace.",
+        "question": "My C: drive is filling up fast. What is taking the space?"
+      }
+    ],
+    "history": [
+      {
+        "day": "2026-11-07",
+        "values": {
+          "gpu_temp_load": 74.0,
+          "cpu_temp_load": 72,
+          "cpu_temp_idle": 41,
+          "gpu_temp_idle": 35,
+          "drive_free_gb:C:": 94.6
+        }
+      },
+      {
+        "day": "2026-11-08",
+        "values": {
+          "gpu_temp_load": 74.2,
+          "cpu_temp_load": 72,
+          "cpu_temp_idle": 41,
+          "gpu_temp_idle": 35,
+          "drive_free_gb:C:": 92.2
+        }
+      },
+      {
+        "day": "2026-11-09",
+        "values": {
+          "gpu_temp_load": 74.4,
+          "cpu_temp_load": 72,
+          "cpu_temp_idle": 41,
+          "gpu_temp_idle": 35,
+          "drive_free_gb:C:": 89.8
+        }
+      },
+      {
+        "day": "2026-11-10",
+        "values": {
+          "gpu_temp_load": 74.6,
+          "cpu_temp_load": 72,
+          "cpu_temp_idle": 41,
+          "gpu_temp_idle": 35,
+          "drive_free_gb:C:": 87.4
+        }
+      },
+      {
+        "day": "2026-11-11",
+        "values": {
+          "gpu_temp_load": 74.8,
+          "cpu_temp_load": 72,
+          "cpu_temp_idle": 41,
+          "gpu_temp_idle": 35,
+          "drive_free_gb:C:": 85.0
+        }
+      },
+      {
+        "day": "2026-11-12",
+        "values": {
+          "gpu_temp_load": 75.0,
+          "cpu_temp_load": 72,
+          "cpu_temp_idle": 41,
+          "gpu_temp_idle": 35,
+          "drive_free_gb:C:": 82.6
+        }
+      },
+      {
+        "day": "2026-11-13",
+        "values": {
+          "gpu_temp_load": 75.2,
+          "cpu_temp_load": 72,
+          "cpu_temp_idle": 41,
+          "gpu_temp_idle": 35,
+          "drive_free_gb:C:": 80.2
+        }
+      },
+      {
+        "day": "2026-11-14",
+        "values": {
+          "gpu_temp_load": 75.4,
+          "cpu_temp_load": 72,
+          "cpu_temp_idle": 41,
+          "gpu_temp_idle": 35,
+          "drive_free_gb:C:": 77.8
+        }
+      },
+      {
+        "day": "2026-11-15",
+        "values": {
+          "gpu_temp_load": 75.6,
+          "cpu_temp_load": 72,
+          "cpu_temp_idle": 41,
+          "gpu_temp_idle": 35,
+          "drive_free_gb:C:": 75.4
+        }
+      },
+      {
+        "day": "2026-11-16",
+        "values": {
+          "gpu_temp_load": 75.8,
+          "cpu_temp_load": 72,
+          "cpu_temp_idle": 41,
+          "gpu_temp_idle": 35,
+          "drive_free_gb:C:": 73.0
+        }
+      },
+      {
+        "day": "2026-11-17",
+        "values": {
+          "gpu_temp_load": 76.0,
+          "cpu_temp_load": 72,
+          "cpu_temp_idle": 41,
+          "gpu_temp_idle": 35,
+          "drive_free_gb:C:": 70.6
+        }
+      },
+      {
+        "day": "2026-11-18",
+        "values": {
+          "gpu_temp_load": 76.2,
+          "cpu_temp_load": 72,
+          "cpu_temp_idle": 41,
+          "gpu_temp_idle": 35,
+          "drive_free_gb:C:": 68.2
+        }
+      },
+      {
+        "day": "2026-11-19",
+        "values": {
+          "gpu_temp_load": 76.4,
+          "cpu_temp_load": 72,
+          "cpu_temp_idle": 41,
+          "gpu_temp_idle": 35,
+          "drive_free_gb:C:": 65.8
+        }
+      },
+      {
+        "day": "2026-11-20",
+        "values": {
+          "gpu_temp_load": 76.6,
+          "cpu_temp_load": 72,
+          "cpu_temp_idle": 41,
+          "gpu_temp_idle": 35,
+          "drive_free_gb:C:": 63.4
+        }
+      },
+      {
+        "day": "2026-11-21",
+        "values": {
+          "gpu_temp_load": 76.8,
+          "cpu_temp_load": 72,
+          "cpu_temp_idle": 41,
+          "gpu_temp_idle": 35,
+          "drive_free_gb:C:": 61.0
+        }
+      }
+    ]
+  }
 }

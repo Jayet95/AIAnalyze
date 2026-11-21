@@ -24,7 +24,9 @@ public sealed class AssistantTools(
     HealthState? health,
     LatestSensors? latest,
     string? databasePath = null,
-    Func<TimeSpan, IReadOnlyList<HealthEvent>>? readEvents = null)
+    Func<TimeSpan, IReadOnlyList<HealthEvent>>? readEvents = null,
+    Monitoring.LiveIssueEngine? live = null,
+    Monitoring.TrendState? trends = null)
 {
     public const int MaxResultChars = 16_000;
 
@@ -61,6 +63,7 @@ public sealed class AssistantTools(
                 "get_session_details" => Int(input, "session_id") is int id ? SessionDetails(id) : "Error: session_id is required.",
                 "get_live_status" => LiveStatus(),
                 "get_system_info" => SystemInfo(),
+                "get_issues_and_trends" => IssuesAndTrends(),
                 _ => $"Error: unknown tool {name}.",
             };
             return result.Length <= MaxResultChars ? result : result[..MaxResultChars] + "\n(truncated)";
@@ -81,6 +84,7 @@ public sealed class AssistantTools(
         "get_session_details" => Int(input, "session_id") is int id ? $"Analyzing session {id}" : "Analyzing a session",
         "get_live_status" => "Reading live status",
         "get_system_info" => "Reading system details",
+        "get_issues_and_trends" => "Looking at live issues and long-term trends",
         _ => "Checking",
     };
 
@@ -328,6 +332,35 @@ public sealed class AssistantTools(
             sb.AppendLine("Physical disks: " + string.Join("; ", disks.Select(d => $"{d.Name} ({d.MediaType}) health {d.Health}, status {d.OperationalStatus}")));
         }
         return sb.ToString();
+    }
+
+    private string IssuesAndTrends()
+    {
+        var sb = new StringBuilder();
+        DiagnosticContext.AppendLiveAndTrends(sb, live?.Current ?? [], trends);
+
+        using var store = Open();
+        var stats = store.GetDailyStats(Monitoring.DailyStats.Day(DateTimeOffset.UtcNow.AddDays(-45)));
+        sb.AppendLine("## Daily history (local days; temperatures in °C: 90th percentile under load, median at idle; free space in GB)");
+        if (stats.Count == 0)
+        {
+            sb.AppendLine("Nothing recorded yet. Daily figures start after the service has run for a day.");
+        }
+        foreach (var day in stats.GroupBy(s => s.Day))
+        {
+            sb.AppendLine($"- {day.Key}: " + string.Join(", ", day.Select(s => string.Create(CultureInfo.InvariantCulture, $"{Label(s.Key)} {s.Value:0.#}"))));
+        }
+        return sb.ToString();
+
+        static string Label(string key) => key switch
+        {
+            Monitoring.DailyStats.CpuTempLoad => "CPU under load",
+            Monitoring.DailyStats.GpuTempLoad => "GPU under load",
+            Monitoring.DailyStats.CpuTempIdle => "CPU idle",
+            Monitoring.DailyStats.GpuTempIdle => "GPU idle",
+            _ when key.StartsWith(Monitoring.DailyStats.DriveFreePrefix) => $"{key[Monitoring.DailyStats.DriveFreePrefix.Length..]} free",
+            _ => key,
+        };
     }
 
     // ------------------------------------------------------------------ helpers

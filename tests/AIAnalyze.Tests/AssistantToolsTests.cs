@@ -22,7 +22,7 @@ public class AssistantToolsTests : IDisposable
     public void Definitions_and_instructions_load_and_every_tool_has_a_handler()
     {
         Assert.Contains("AIAnalyze", AssistantTools.Instructions);
-        Assert.Equal(7, AssistantTools.Definitions.Count);
+        Assert.Equal(8, AssistantTools.Definitions.Count);
         var tools = NewTools();
         foreach (var d in AssistantTools.Definitions)
         {
