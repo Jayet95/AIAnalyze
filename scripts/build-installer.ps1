@@ -36,6 +36,11 @@ Remove-Item -Recurse -Force $app -ErrorAction SilentlyContinue
 dotnet publish $project -c Release -r win-x64 --self-contained true -p:PublishSingleFile=false -o $app
 if ($LASTEXITCODE -ne 0) { throw "dotnet publish failed." }
 
+# 1b. The AIAnalyze window and tray app (WebView2), self-contained, in its own folder.
+$desktopProject = Join-Path $repoRoot "AIAnalyze.Desktop\AIAnalyze.Desktop.csproj"
+dotnet publish $desktopProject -c Release -r win-x64 --self-contained true -o (Join-Path $app "desktop")
+if ($LASTEXITCODE -ne 0) { throw "Publishing the desktop app failed." }
+
 # 2. The UI from the ui/ submodule, when Node.js is available.
 $uiDir = Join-Path $repoRoot "ui"
 if (Get-Command git -ErrorAction SilentlyContinue) {

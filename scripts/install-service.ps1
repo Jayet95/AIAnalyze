@@ -65,6 +65,12 @@ if (Get-Service -Name $serviceName -ErrorAction SilentlyContinue) {
 dotnet publish $project -c Release -r win-x64 --self-contained true -p:PublishSingleFile=false -o $InstallDir
 if ($LASTEXITCODE -ne 0) { throw "dotnet publish failed." }
 
+# The AIAnalyze window and tray app (WebView2). Close a running copy so its files can be replaced.
+Get-Process AIAnalyze.Desktop -ErrorAction SilentlyContinue | Stop-Process -Force
+$desktopProject = Join-Path $repoRoot "AIAnalyze.Desktop\AIAnalyze.Desktop.csproj"
+dotnet publish $desktopProject -c Release -r win-x64 --self-contained true -o (Join-Path $InstallDir "desktop")
+if ($LASTEXITCODE -ne 0) { Write-Warning "Publishing the AIAnalyze window app failed; the Start menu shortcut opens the browser instead." }
+
 # PresentMon next to the app: the service uses it without any configuration.
 $bundledPresentMon = Join-Path $InstallDir "PresentMon\PresentMon.exe"
 if ($PresentMonPath) {
@@ -180,9 +186,18 @@ sc.exe failure $serviceName reset= 86400 actions= restart/60000/restart/60000/re
 
 Start-Service -Name $serviceName
 
-# Start menu shortcut to the UI, for every user.
-$shortcut = Join-Path $env:ProgramData "Microsoft\Windows\Start Menu\Programs\AIAnalyze.url"
-Set-Content -Path $shortcut -Value "[InternetShortcut]`r`nURL=$uiUrl" -Encoding ascii
+# Start menu shortcut for every user: the AIAnalyze window app when it was published, otherwise the browser page.
+$programs = Join-Path $env:ProgramData "Microsoft\Windows\Start Menu\Programs"
+$desktopExe = Join-Path $InstallDir "desktop\AIAnalyze.Desktop.exe"
+if (Test-Path $desktopExe) {
+    Remove-Item (Join-Path $programs "AIAnalyze.url") -Force -ErrorAction SilentlyContinue
+    $link = (New-Object -ComObject WScript.Shell).CreateShortcut((Join-Path $programs "AIAnalyze.lnk"))
+    $link.TargetPath = $desktopExe
+    $link.Description = "Your PC's health, temperatures and games"
+    $link.Save()
+} else {
+    Set-Content -Path (Join-Path $programs "AIAnalyze.url") -Value "[InternetShortcut]`r`nURL=$uiUrl" -Encoding ascii
+}
 
 Write-Host ""
 Write-Host "AIAnalyze is installed and running."
@@ -197,5 +212,5 @@ if (Test-Path $secretsPath) {
 
 if (-not $NoBrowser) {
     Start-Sleep -Seconds 3
-    Start-Process $uiUrl
+    if (Test-Path $desktopExe) { Start-Process $desktopExe } else { Start-Process $uiUrl }
 }

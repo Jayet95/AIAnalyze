@@ -48,7 +48,12 @@ powershell -ExecutionPolicy Bypass -File scripts\uninstall-service.ps1
 
 ## Using it
 
-Open **AIAnalyze** from the Start menu, or go to <http://127.0.0.1:5280/>.
+Open **AIAnalyze** from the Start menu. It opens in its own window (the AIAnalyze desktop app, which shows the service's UI with Microsoft Edge WebView2) and keeps an icon next to the clock:
+
+- Closing the window keeps AIAnalyze in the notification area; right-click the icon for Open, Check health now, Start with Windows, and Quit.
+- New alerts appear as Windows notifications, even while the window is closed.
+- Sign-in opens in your default browser, and the window refreshes once you're signed in.
+- The same UI is also available in any browser at <http://127.0.0.1:5280/>.
 
 - **Health** (opens first): an overall verdict, each check in green, yellow or red with its evidence, **Check now**, and the programs using the most CPU and memory.
 - **Live**: CPU and GPU temperature, load, power and clock, with the last 5 minutes as charts, plus the state of FPS capture.

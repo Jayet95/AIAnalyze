@@ -1,0 +1,28 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- The AIAnalyze window: shows the service's UI in its own window (WebView2), with a tray icon and notifications. -->
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <UseWindowsForms>true</UseWindowsForms>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <RootNamespace>AIAnalyze.Desktop</RootNamespace>
+    <AssemblyName>AIAnalyze.Desktop</AssemblyName>
+    <ApplicationHighDpiMode>PerMonitorV2</ApplicationHighDpiMode>
+
+    <Product>AIAnalyze</Product>
+    <AssemblyTitle>AIAnalyze</AssemblyTitle>
+    <Description>AIAnalyze window and notification-area icon.</Description>
+    <Company>AIAnalyze</Company>
+    <Copyright>Copyright © 2026 AIAnalyze</Copyright>
+    <Version>0.5.0</Version>
+    <FileVersion>0.5.0.0</FileVersion>
+    <AssemblyVersion>0.5.0.0</AssemblyVersion>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.2903.40" />
+  </ItemGroup>
+
+</Project>

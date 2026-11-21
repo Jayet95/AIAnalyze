@@ -42,29 +42,34 @@ WelcomeLabel2=This installs [name/ver], a local assistant that checks your PC's 
 
 [Tasks]
 Name: "desktopicon"; Description: "Create a desktop shortcut"; GroupDescription: "Shortcuts:"; Flags: unchecked
+Name: "startup"; Description: "Start AIAnalyze with Windows (icon next to the clock, alerts as notifications)"; GroupDescription: "Startup:"
 
 [Files]
 ; build\app holds the self-contained app (no .NET needed), the UI in wwwroot, and optionally PresentMon.
 Source: "..\build\app\*"; DestDir: "{app}"; Flags: recursesubdirs createallsubdirs ignoreversion
 
-[INI]
-; Shortcuts to the local UI (a web page served by the service).
-Filename: "{autoprograms}\{#MyAppName}.url"; Section: "InternetShortcut"; Key: "URL"; String: "{#MyUiUrl}"
-Filename: "{autodesktop}\{#MyAppName}.url"; Section: "InternetShortcut"; Key: "URL"; String: "{#MyUiUrl}"; Tasks: desktopicon
-
-[UninstallDelete]
+[InstallDelete]
+; Earlier versions put browser shortcuts (.url) in these places.
 Type: files; Name: "{autoprograms}\{#MyAppName}.url"
 Type: files; Name: "{autodesktop}\{#MyAppName}.url"
+
+[Icons]
+; The AIAnalyze window app (WebView2) with its tray icon. The service keeps running without it.
+Name: "{autoprograms}\{#MyAppName}"; Filename: "{app}\desktop\AIAnalyze.Desktop.exe"; Comment: "Your PC's health, temperatures and games"
+Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\desktop\AIAnalyze.Desktop.exe"; Tasks: desktopicon
 
 [Run]
 Filename: "{sys}\sc.exe"; Parameters: "create {#MyServiceName} binPath= ""{app}\AIAnalyze.exe"" start= auto DisplayName= ""AIAnalyze PC Diagnostics"""; Flags: runhidden waituntilterminated; StatusMsg: "Installing the AIAnalyze service..."
 Filename: "{sys}\sc.exe"; Parameters: "description {#MyServiceName} ""Checks PC health, samples CPU and GPU sensors, records FPS, and explains problems. UI: {#MyUiUrl}"""; Flags: runhidden waituntilterminated
 Filename: "{sys}\sc.exe"; Parameters: "failure {#MyServiceName} reset= 86400 actions= restart/60000/restart/60000/restart/60000"; Flags: runhidden waituntilterminated
 Filename: "{sys}\sc.exe"; Parameters: "start {#MyServiceName}"; Flags: runhidden waituntilterminated; StatusMsg: "Starting AIAnalyze..."
-; Give the service a few seconds to start before opening the UI.
-Filename: "{cmd}"; Parameters: "/c timeout /t 4 /nobreak >nul & start """" ""{#MyUiUrl}"""; Description: "Open AIAnalyze"; Flags: postinstall nowait runhidden skipifsilent
+; Register "start with Windows" for the user who ran setup (not the elevated admin account).
+Filename: "{app}\desktop\AIAnalyze.Desktop.exe"; Parameters: "--enable-startup --background"; Flags: runasoriginaluser nowait; Tasks: startup
+; Open the window. The app waits for the service and shows a message if it isn't answering yet.
+Filename: "{app}\desktop\AIAnalyze.Desktop.exe"; Description: "Open AIAnalyze"; Flags: postinstall nowait runasoriginaluser skipifsilent
 
 [UninstallRun]
+Filename: "{sys}\taskkill.exe"; Parameters: "/IM AIAnalyze.Desktop.exe /F"; Flags: runhidden waituntilterminated; RunOnceId: "CloseWindowApp"
 Filename: "{sys}\sc.exe"; Parameters: "stop {#MyServiceName}"; Flags: runhidden waituntilterminated; RunOnceId: "StopService"
 Filename: "{cmd}"; Parameters: "/c timeout /t 3 /nobreak >nul"; Flags: runhidden waituntilterminated; RunOnceId: "WaitForStop"
 Filename: "{sys}\sc.exe"; Parameters: "delete {#MyServiceName}"; Flags: runhidden waituntilterminated; RunOnceId: "DeleteService"
@@ -73,6 +78,8 @@ Filename: "{sys}\sc.exe"; Parameters: "delete {#MyServiceName}"; Flags: runhidde
 const
   ServiceKey = 'SYSTEM\CurrentControlSet\Services\AIAnalyze';
   PawnIOKey = 'SYSTEM\CurrentControlSet\Services\PawnIO';
+  WebView2Key = 'SOFTWARE\WOW6432Node\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}';
+  RunKey = 'Software\Microsoft\Windows\CurrentVersion\Run';
 
 procedure RunHidden(const FileName, Params: String);
 var
@@ -81,10 +88,11 @@ begin
   Exec(FileName, Params, '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
 end;
 
-{ On upgrade, stop and remove the running service first so its files can be replaced. }
+{ On upgrade, close the window app and stop and remove the running service first so files can be replaced. }
 function PrepareToInstall(var NeedsRestart: Boolean): String;
 begin
   Result := '';
+  RunHidden(ExpandConstant('{sys}\taskkill.exe'), '/IM AIAnalyze.Desktop.exe /F');
   if RegKeyExists(HKLM, ServiceKey) then
   begin
     RunHidden(ExpandConstant('{sys}\sc.exe'), 'stop AIAnalyze');
@@ -97,10 +105,18 @@ end;
 { CPU temperature, power and motherboard fans need the signed PawnIO driver, which is not bundled. }
 procedure CurStepChanged(CurStep: TSetupStep);
 begin
-  if (CurStep = ssPostInstall) and (not WizardSilent) and (not RegKeyExists(HKLM, PawnIOKey)) then
-    MsgBox('AIAnalyze is installed.' + #13#10#13#10 +
-      'For CPU temperature, CPU power and motherboard fan readings, install the free, signed PawnIO driver from pawnio.eu, then restart the PC. ' +
-      'Everything else works without it.', mbInformation, MB_OK);
+  if (CurStep = ssPostInstall) and (not WizardSilent) then
+  begin
+    { The window uses WebView2 (part of Windows 11 and most Windows 10 PCs). Without it, AIAnalyze still works in the browser. }
+    if not RegKeyExists(HKLM, WebView2Key) then
+      MsgBox('The AIAnalyze window needs Microsoft Edge WebView2, which is missing on this PC.' + #13#10#13#10 +
+        'Install the free "Evergreen" WebView2 Runtime from Microsoft. Until then, open AIAnalyze in your browser at {#MyUiUrl}.',
+        mbInformation, MB_OK);
+    if not RegKeyExists(HKLM, PawnIOKey) then
+      MsgBox('AIAnalyze is installed.' + #13#10#13#10 +
+        'For CPU temperature, CPU power and motherboard fan readings, install the free, signed PawnIO driver from pawnio.eu, then restart the PC. ' +
+        'Everything else works without it.', mbInformation, MB_OK);
+  end;
 end;
 
 { Collected data is kept unless the user asks to remove it. }
@@ -110,6 +126,8 @@ var
 begin
   if CurUninstallStep = usPostUninstall then
   begin
+    { Remove "start with Windows" for the account running the uninstaller; entries for other users point to a missing file and are ignored by Windows. }
+    RegDeleteValue(HKCU, RunKey, 'AIAnalyze');
     DataDir := ExpandConstant('{commonappdata}\AIAnalyze');
     if DirExists(DataDir) and (not UninstallSilent) then
       if MsgBox('Also delete the data AIAnalyze collected on this PC (health history, game sessions, settings, sign-in)?',
